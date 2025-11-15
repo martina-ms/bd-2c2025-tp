@@ -53,9 +53,10 @@ CREATE TABLE THE_BD_TEAM.BI_Alumno (
 );
 GO
 
+--DROP TABLE  THE_BD_TEAM.BI_Profesor
 -- Profesor
 CREATE TABLE THE_BD_TEAM.BI_Profesor (
-    id_profesor BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL, 
+    id_profesor BIGINT PRIMARY KEY NOT NULL, 
     rango_etario NVARCHAR(255)
 );
 GO
@@ -184,19 +185,19 @@ CREATE TABLE THE_BD_TEAM.BI_Hecho_Cursada (
     aprobo_cursada BIT,
 
 
-    CONSTRAINT FK_BI_Inscripcion_Curso
+    CONSTRAINT FK_BI_Cursada_Curso
     FOREIGN KEY (id_curso)
     REFERENCES THE_BD_TEAM.BI_Curso(id_curso),
 
-    CONSTRAINT FK_BI_Inscripcion_Sede
+    CONSTRAINT FK_BI_Cursada_Sede
     FOREIGN KEY (id_sede)
     REFERENCES THE_BD_TEAM.BI_Sede(id_sede),
 
-    CONSTRAINT FK_BI_Inscripcion_Tiempo
+    CONSTRAINT FK_BI_Cursada_Tiempo
     FOREIGN KEY (id_tiempo)
     REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
 
-    CONSTRAINT FK_BI_Inscripcion_Alumno
+    CONSTRAINT FK_BI_Cursada_Alumno
     FOREIGN KEY (legajo)
     REFERENCES THE_BD_TEAM.BI_Alumno(legajo)
 );
@@ -255,6 +256,8 @@ BEGIN
 END;
 GO
 
+--DROP PROCEDURE  THE_BD_TEAM.BI_MigrarCurso
+GO
 -- Curso
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarCurso
 AS
@@ -262,7 +265,7 @@ BEGIN
     INSERT INTO THE_BD_TEAM.BI_Curso
     (id_curso, turno, categoria, fecha_inicio)
     
-    SELECT DISTINCT c.cod_curso, c.fecha_inicio, t.turno, ca.categoria
+    SELECT DISTINCT c.cod_curso, t.turno, ca.categoria, c.fecha_inicio
     FROM THE_BD_TEAM.Curso c
         JOIN THE_BD_TEAM.Turno t
         ON (t.id_turno = c.id_turno)
@@ -424,23 +427,25 @@ BEGIN
     SELECT
         THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha) AS FK_tiempo,
         cur.id_sede AS FK_sede,
-        mf.legajo AS FK_alumno,
-        mf.id_curso AS FK_curso,
-        mf.nota AS nota_final,
-        CASE WHEN mf.nota IS NOT NULL AND mf.nota >= 4 THEN 1 ELSE 0 END AS aprobo_final,
-        CASE WHEN mf.nota IS NULL THEN 1 ELSE 0 END AS ausente,
+        ef.legajo AS FK_alumno,
+        mf.cod_curso AS FK_curso,
+        ef.nota AS nota_final,
+        CASE WHEN ef.nota IS NOT NULL AND ef.nota >= 4 THEN 1 ELSE 0 END AS aprobo_final,
+        CASE WHEN ef.nota IS NULL THEN 1 ELSE 0 END AS ausente,
         1 AS cant_inscriptos,
         
         -- DIAS TRANSCURRIDOS
         CASE 
-            WHEN mf.nota IS NOT NULL AND mf.nota >= 4 
+            WHEN ef.nota IS NOT NULL AND ef.nota >= 4 
             THEN THE_BD_TEAM.BI_Calcular_Dias_Transcurridos(cur.fecha_inicio, mf.fecha)
             ELSE NULL 
         END AS dias_hasta_aprobacion_final
 
     FROM THE_BD_TEAM.Mesa_De_Final mf
-    JOIN THE_BD_TEAM.BI_Curso cur 
-        ON cur.id_curso = mf.id_curso
+    JOIN THE_BD_TEAM.Curso cur 
+        ON cur.cod_curso = mf.cod_curso
+    JOIN THE_BD_TEAM.Examen_Final ef
+        ON mf.id_mesa = ef.id_mesa
     WHERE 
         mf.fecha IS NOT NULL;
 END;
@@ -578,6 +583,35 @@ GROUP BY
     cur.categoria;
 GO
 
+-- vista 6 
+CREATE VIEW THE_BD_TEAM.BI_V_TasaAusentismoFinales
+AS
+SELECT
+    t.anio,
+    t.cuatrimestre AS semestre, 
+    s.nombre AS sede,
+    
+    -- (suma de ausentes / inscriptos) * 100
+    CAST(
+        SUM(CASE WHEN hf.ausente = 1 THEN hf.cant_inscriptos ELSE 0 END) * 100.0 
+        / SUM(hf.cant_inscriptos) 
+    AS DECIMAL(10,2)) AS tasa_ausentismo
+    
+FROM 
+    THE_BD_TEAM.BI_Hechos_Finales hf
+
+JOIN 
+    THE_BD_TEAM.BI_Tiempo t ON t.id_tiempo = hf.FK_tiempo
+    
+JOIN 
+    THE_BD_TEAM.BI_Sede s ON s.id_sede = hf.FK_sede
+    
+GROUP BY
+    t.anio,
+    t.cuatrimestre,
+    s.nombre;
+GO
+
 ------------------------------
 ---- Ejecutar Migraciones ----
 ------------------------------
@@ -588,10 +622,10 @@ BEGIN TRY
         EXEC THE_BD_TEAM.BI_MigrarSede
         EXEC THE_BD_TEAM.BI_MigrarCurso
         EXEC THE_BD_TEAM.BI_MigrarTiempo
-        EXEC THE_BD_TEAM.BI_MigrarInscripcion
         EXEC THE_BD_TEAM.BI_MigrarAlumno
         EXEC THE_BD_TEAM.BI_MigrarProfesor
-        EXEC THE_BD_TEAM.BI_MigrarMedioPago
+        --EXEC THE_BD_TEAM.BI_MigrarMedioDePago
+        EXEC THE_BD_TEAM.BI_MigrarInscripcion
         EXEC THE_BD_TEAM.BI_MigrarCursada
         EXEC THE_BD_TEAM.BI_MigrarHechosFinales
 
@@ -624,3 +658,13 @@ BEGIN CATCH
     PRINT @Msg;
 
 END CATCH
+------------------------------
+------ Test de Vistas --------
+------------------------------
+
+--SELECT * FROM THE_BD_TEAM.BI_V_CategoriasYTurnosMasSolicitados
+--SELECT * FROM THE_BD_TEAM.BI_V_TasaRechazoInscripciones
+--SELECT * FROM THE_BD_TEAM.BI_V_TiempoPromedioFinalizacion
+--SELECT * FROM THE_BD_TEAM.BI_V_TasaAprobacionCursada
+--SELECT * FROM THE_BD_TEAM.BI_V_TasaAusentismoFinales
+--SELECT * FROM THE_BD_TEAM.BI_V_NotaPromedioFinales
