@@ -1,5 +1,5 @@
 -- ============================================================
--- SCRIPT DE CREACI覰 Y MIGRACI覰 DE DATOS BI
+-- SCRIPT DE CREACI脫N Y MIGRACI脫N DE DATOS BI
 -- Grupo: THE_BD_TEAM
 -- Curso: K3522
 -- Integrantes: Calzado, Chazarreta y Mendez Spahn
@@ -32,7 +32,8 @@ GO
 CREATE TABLE THE_BD_TEAM.BI_Curso (
     id_curso BIGINT PRIMARY KEY NOT NULL, 
     turno VARCHAR(6),
-    categoria VARCHAR(15)
+    categoria VARCHAR(15),
+    fecha_inicio DATETIME2(6) --lo necesito para finales
 );
 GO
 
@@ -56,6 +57,13 @@ GO
 CREATE TABLE THE_BD_TEAM.BI_Profesor (
     id_profesor BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL, 
     rango_etario NVARCHAR(255)
+);
+GO
+
+-- MedioDePago - FALTA MIGRAR NO SE MUY BIEN SI ESTO ESTA BN
+CREATE TABLE THE_BD_TEAM.BI_MedioDePago (
+    id_medio_pago BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL, 
+    medio_pago NVARCHAR(255)
 );
 GO
 
@@ -101,7 +109,7 @@ RETURNS TABLE
 AS
 RETURN
 (
-    -- notas de m骴ulos
+    -- notas de m贸dulos
     SELECT axe.nota
     FROM THE_BD_TEAM.AlumnoXEvaluacion axe
     JOIN THE_BD_TEAM.Evaluacion ev 
@@ -119,6 +127,19 @@ RETURN
     WHERE tp.legajo = @legajo
       AND tp.cod_curso = @cod_curso
 );
+GO
+
+-- Calcular los dias transcurridos entre dos fechas
+CREATE FUNCTION THE_BD_TEAM.BI_Calcular_Dias_Transcurridos(@fecha_inicio DATE, @fecha_final DATE) 
+RETURNS INT 
+AS 
+BEGIN
+    IF @fecha_inicio IS NULL OR @fecha_final IS NULL
+        RETURN NULL;
+        
+    -- Calcula la diferencia en d铆as
+    RETURN DATEDIFF(DAY, @fecha_inicio, @fecha_final);
+END;
 GO
 
 ----------------
@@ -181,9 +202,44 @@ CREATE TABLE THE_BD_TEAM.BI_Hecho_Cursada (
 );
 GO
 
+CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
+    id_hechos_final BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL,
+    FK_tiempo BIGINT NOT NULL,
+    FK_sede BIGINT NOT NULL,
+    FK_alumno BIGINT NOT NULL,
+    FK_curso BIGINT NOT NULL,
+    
+    nota_final DECIMAL(4,2),                                   
+    aprobo_final BIT NOT NULL,                                 
+    ausente BIT NOT NULL,                                      
+    cant_inscriptos INT NOT NULL DEFAULT 1,                    
+    
+    
+    dias_hasta_aprobacion_final INT,        -- dias desde inicio curso hasta aprobaci贸n final
+
+    CONSTRAINT FK_BI_Hechos_Finales_Tiempo
+    FOREIGN KEY (FK_tiempo)
+    REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
+
+    CONSTRAINT FK_BI_Hechos_Finales_Sede
+    FOREIGN KEY (FK_sede)
+    REFERENCES THE_BD_TEAM.BI_Sede(id_sede),
+
+    CONSTRAINT FK_BI_Hechos_Finales_Alumno
+    FOREIGN KEY (FK_alumno)
+    REFERENCES THE_BD_TEAM.BI_Alumno(legajo),
+
+    CONSTRAINT FK_BI_Hechos_Finales_Curso
+    FOREIGN KEY (FK_curso)
+    REFERENCES THE_BD_TEAM.BI_Curso(id_curso),
+    
+);
+
+GO
+
 
 ------------------------------
----- Procedures Migraci髇 ----
+---- Procedures Migraci贸n ----
 ------------------------------
 
 -- Sede
@@ -204,9 +260,9 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarCurso
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Curso
-    (id_curso, turno, categoria)
+    (id_curso, turno, categoria, fecha_inicio)
     
-    SELECT DISTINCT c.cod_curso , t.turno, ca.categoria
+    SELECT DISTINCT c.cod_curso, c.fecha_inicio, t.turno, ca.categoria
     FROM THE_BD_TEAM.Curso c
         JOIN THE_BD_TEAM.Turno t
         ON (t.id_turno = c.id_turno)
@@ -316,6 +372,8 @@ BEGIN
 END;
 GO
 
+-- Cursada
+
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarCursada
 AS
 BEGIN
@@ -344,6 +402,47 @@ BEGIN
         JOIN THE_BD_TEAM.Curso c
         ON (c.cod_curso = tp.cod_curso)
 
+END;
+GO
+
+-- finales
+CREATE PROCEDURE THE_BD_TEAM.BI_MigrarHechosFinales
+AS
+BEGIN
+    INSERT INTO THE_BD_TEAM.BI_Hechos_Finales
+    (
+        FK_tiempo,
+        FK_sede,
+        FK_alumno,
+        FK_curso,
+        nota_final,
+        aprobo_final,
+        ausente,
+        cant_inscriptos,
+        dias_hasta_aprobacion_final 
+    )
+    SELECT
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha) AS FK_tiempo,
+        cur.id_sede AS FK_sede,
+        mf.legajo AS FK_alumno,
+        mf.id_curso AS FK_curso,
+        mf.nota AS nota_final,
+        CASE WHEN mf.nota IS NOT NULL AND mf.nota >= 4 THEN 1 ELSE 0 END AS aprobo_final,
+        CASE WHEN mf.nota IS NULL THEN 1 ELSE 0 END AS ausente,
+        1 AS cant_inscriptos,
+        
+        -- DIAS TRANSCURRIDOS
+        CASE 
+            WHEN mf.nota IS NOT NULL AND mf.nota >= 4 
+            THEN THE_BD_TEAM.BI_Calcular_Dias_Transcurridos(cur.fecha_inicio, mf.fecha)
+            ELSE NULL 
+        END AS dias_hasta_aprobacion_final
+
+    FROM THE_BD_TEAM.Mesa_De_Final mf
+    JOIN THE_BD_TEAM.BI_Curso cur 
+        ON cur.id_curso = mf.id_curso
+    WHERE 
+        mf.fecha IS NOT NULL;
 END;
 GO
 
@@ -397,6 +496,88 @@ JOIN THE_BD_TEAM.BI_Tiempo t
 GROUP BY s.nombre, t.anio, t.mes;
 GO
 
+--Vista 3: Comparaci贸n de Desempe帽o de Cursada
+CREATE VIEW THE_BD_TEAM.BI_V_TasaAprobacionCursada
+AS
+SELECT
+    s.nombre as sede,
+    t.anio,
+    -- (Suma de aprobados / Total de cursadas) * 100
+    CAST(
+        SUM(CASE WHEN hc.aprobo_cursada = 1 THEN 1 ELSE 0 END) * 100.0 
+        / COUNT(*)
+    AS DECIMAL(10,2)) AS porcentaje_aprobacion_cursada
+FROM THE_BD_TEAM.BI_Hecho_Cursada hc
+JOIN THE_BD_TEAM.BI_Sede s ON s.id_sede = hc.id_sede
+JOIN THE_BD_TEAM.BI_Tiempo t ON t.id_tiempo = hc.id_tiempo 
+GROUP BY 
+    s.nombre,
+    t.anio;
+GO
+
+-- Vista 4
+
+CREATE VIEW THE_BD_TEAM.BI_V_TiempoPromedioFinalizacion
+AS
+SELECT
+    cur.categoria,
+    YEAR(cur.fecha_inicio) AS anio_inicio_curso, 
+    
+    CAST(
+        AVG(hf.dias_hasta_aprobacion_final * 1.0) 
+    AS DECIMAL(10,2)) AS tiempo_promedio_dias
+FROM 
+    THE_BD_TEAM.BI_Hechos_Finales hf
+    
+JOIN 
+    THE_BD_TEAM.BI_Curso cur
+    ON cur.id_curso = hf.FK_curso
+    
+WHERE 
+    hf.aprobo_final = 1 
+    AND hf.dias_hasta_aprobacion_final IS NOT NULL
+    
+GROUP BY 
+    cur.categoria,
+    YEAR(cur.fecha_inicio);
+GO
+
+-- Vista 5
+
+CREATE VIEW THE_BD_TEAM.BI_V_NotaPromedioFinales
+AS
+SELECT
+    t.anio,
+    t.cuatrimestre AS semestre, --rariiiiiiiiiiiiiiiiiiiiiiii
+    a.rango_etario,
+    cur.categoria,
+    
+
+    CAST(AVG(hf.nota_final) AS DECIMAL(10,2)) AS nota_promedio_final
+FROM 
+    THE_BD_TEAM.BI_Hechos_Finales hf
+
+JOIN 
+    THE_BD_TEAM.BI_Tiempo t
+    ON t.id_tiempo = hf.FK_tiempo
+    
+JOIN 
+    THE_BD_TEAM.BI_Alumno a
+    ON a.legajo = hf.FK_alumno
+    
+JOIN 
+    THE_BD_TEAM.BI_Curso cur
+    ON cur.id_curso = hf.FK_curso
+    
+WHERE hf.ausente = 0 
+    
+GROUP BY
+    t.anio,
+    t.cuatrimestre,
+    a.rango_etario,
+    cur.categoria;
+GO
+
 ------------------------------
 ---- Ejecutar Migraciones ----
 ------------------------------
@@ -408,6 +589,11 @@ BEGIN TRY
         EXEC THE_BD_TEAM.BI_MigrarCurso
         EXEC THE_BD_TEAM.BI_MigrarTiempo
         EXEC THE_BD_TEAM.BI_MigrarInscripcion
+        EXEC THE_BD_TEAM.BI_MigrarAlumno
+        EXEC THE_BD_TEAM.BI_MigrarProfesor
+        EXEC THE_BD_TEAM.BI_MigrarMedioPago
+        EXEC THE_BD_TEAM.BI_MigrarCursada
+        EXEC THE_BD_TEAM.BI_MigrarHechosFinales
 
     COMMIT TRAN
 END TRY
@@ -417,7 +603,7 @@ BEGIN CATCH
 
     /*ROLLBACK TRAN
     DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
-    PRINT 'Error en migraci髇: ' + @ErrorMessage;*/
+    PRINT 'Error en migraci贸n: ' + @ErrorMessage;*/
 
     DECLARE 
         @Msg NVARCHAR(4000),
@@ -430,9 +616,9 @@ BEGIN CATCH
     SET @ErrProc = ERROR_PROCEDURE();
 
     SET @Msg = 
-        'ERROR EN MIGRACI覰' + CHAR(10) +
+        'ERROR EN MIGRACI脫N' + CHAR(10) +
         'Procedimiento: ' + ISNULL(@ErrProc, 'N/A') + CHAR(10) +
-        'L韓ea: ' + CAST(@ErrLine AS VARCHAR(10)) + CHAR(10) +
+        'L铆nea: ' + CAST(@ErrLine AS VARCHAR(10)) + CHAR(10) +
         'Mensaje: ' + @ErrMsg;
 
     PRINT @Msg;
