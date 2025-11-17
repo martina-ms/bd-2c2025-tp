@@ -5,6 +5,9 @@
 -- Integrantes: Calzado, Chazarreta y Mendez Spahn
 -- ============================================================
 
+USE GD2C2025
+GO
+
 -- 1. CREACIÓN DEL ESQUEMA
 
 CREATE SCHEMA THE_BD_TEAM;
