@@ -60,6 +60,22 @@ CREATE TABLE THE_BD_TEAM.BI_Profesor (
 );
 GO
 
+-- Medio De Pago
+CREATE TABLE THE_BD_TEAM.BI_MedioDePago (
+    id_medio_pago BIGINT PRIMARY KEY NOT NULL, 
+    medio_de_pago NVARCHAR(255)
+);
+GO
+
+-- Satisfaccion
+CREATE TABLE THE_BD_TEAM.BI_BloqueDeSatisfaccion (
+    id_bloque_satisfaccion BIGINT PRIMARY KEY,
+    descripcion NVARCHAR(255),
+    nota_min BIGINT,
+    nota_max BIGINT
+);
+GO
+
 -----------------------
 ---- Funciones Aux ----
 -----------------------
@@ -133,6 +149,33 @@ BEGIN
         
     -- Calcula la diferencia en días
     RETURN DATEDIFF(DAY, @fecha_inicio, @fecha_final);
+END;
+GO
+
+-- Clasificar Encuesta
+CREATE FUNCTION THE_BD_TEAM.BI_Clasificar_Encuesta(@promedio DECIMAL(5,2))
+RETURNS INT
+AS
+BEGIN
+    IF @promedio BETWEEN 7 AND 10 RETURN 3; -- Satisfecho
+    IF @promedio BETWEEN 5 AND 6 RETURN 2; -- Neutral
+    IF @promedio BETWEEN 1 AND 4 RETURN 1; -- Insatisfecho
+    RETURN NULL;
+END;
+GO
+
+-- Notas Encuestas
+CREATE FUNCTION THE_BD_TEAM.BI_Promedio_Encuesta(@id_encuesta BIGINT)
+RETURNS DECIMAL(5,2)
+AS
+BEGIN
+    DECLARE @prom DECIMAL(5,2);
+
+    SELECT @prom = AVG(CONVERT(DECIMAL(5,2), r.nota))
+    FROM THE_BD_TEAM.Respuesta r
+    WHERE r.id_encuesta = @id_encuesta;
+
+    RETURN @prom;
 END;
 GO
 
@@ -235,6 +278,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hecho_Finanzas (
     id_tiempo_emision BIGINT NOT NULL,
     id_tiempo_pago BIGINT NULL, 
     id_curso BIGINT NULL,
+    id_medio_pago BIGINT NULL,
     
     importe_facturado DECIMAL(18,2) NOT NULL,
     importe_adeudado DECIMAL(18,2) NOT NULL,
@@ -256,7 +300,39 @@ CREATE TABLE THE_BD_TEAM.BI_Hecho_Finanzas (
 
     CONSTRAINT FK_BI_Finanzas_Curso
     FOREIGN KEY (id_curso)
-    REFERENCES THE_BD_TEAM.BI_Curso(id_curso)
+    REFERENCES THE_BD_TEAM.BI_Curso(id_curso),
+
+    CONSTRAINT FK_BI_Finanzas_Medio_Pago
+    FOREIGN KEY (id_medio_pago)
+    REFERENCES THE_BD_TEAM.BI_MedioDePago(id_medio_pago)
+);
+GO
+
+-- Encuestas
+CREATE TABLE THE_BD_TEAM.BI_Hecho_Encuestas (
+    id_encuesta BIGINT IDENTITY(1,1) PRIMARY KEY,
+    id_profesor BIGINT,
+    id_sede BIGINT,
+    id_tiempo BIGINT,
+    id_bloque_satisfaccion BIGINT,
+    cantidad_encuestas INT,
+
+    CONSTRAINT FK_BI_Encuestas_Sede
+    FOREIGN KEY (id_sede)
+    REFERENCES THE_BD_TEAM.BI_Sede(id_sede),
+
+    CONSTRAINT FK_BI_Encuestas_Tiempo
+    FOREIGN KEY (id_tiempo)
+    REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
+
+    CONSTRAINT FK_BI_Encuestas_Profesor
+    FOREIGN KEY (id_profesor)
+    REFERENCES THE_BD_TEAM.BI_Profesor(id_profesor),
+
+    CONSTRAINT FK_BI_Encuestas_Satisfaccion
+    FOREIGN KEY (id_bloque_satisfaccion)
+    REFERENCES THE_BD_TEAM.BI_BloqueDeSatisfaccion(id_bloque_satisfaccion)
+
 );
 GO
 
@@ -376,6 +452,31 @@ BEGIN
 END;
 GO
 
+-- Medio De Pago
+CREATE PROCEDURE THE_BD_TEAM.BI_MigrarMedioDePago
+AS
+BEGIN
+    INSERT INTO THE_BD_TEAM.BI_MedioDePago
+        (id_medio_pago, medio_de_pago)
+    
+    SELECT mp.id_medioDePago, mp.medioPago
+    FROM THE_BD_TEAM.MedioDePago mp
+END;
+GO
+
+-- Satisfaccion
+CREATE PROCEDURE THE_BD_TEAM.BI_MigrarSatisfaccion
+AS
+BEGIN
+    INSERT INTO THE_BD_TEAM.BI_BloqueDeSatisfaccion
+    (id_bloque_satisfaccion, descripcion, nota_min, nota_max)
+    VALUES
+        (1, 'Insatisfecho', 1, 4),
+        (2, 'Neutral', 5, 6),
+        (3, 'Satisfecho', 7, 10)
+END;
+GO
+
 -- Inscripcion
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarInscripcion
 AS
@@ -461,10 +562,10 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarFinanzas
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hecho_Finanzas
-    (id_sede, id_tiempo_emision, id_tiempo_pago, importe_facturado,
+    (id_sede, id_medio_pago, id_tiempo_emision, id_tiempo_pago, importe_facturado,
      importe_adeudado, pago_fuera_termino, id_curso, importe_pagado)
     
-    SELECT s.id_sede,
+    SELECT s.id_sede, pmp.id_medioDePago,
 
         -- Tiempo de emisión de la factura
         THE_BD_TEAM.BI_Obtener_Id_Tiempo(f.fecha_emision),
@@ -519,9 +620,32 @@ BEGIN
         ON c.cod_curso = df.cod_curso
     JOIN THE_BD_TEAM.Sede s
         ON s.id_sede = c.id_sede
+    LEFT JOIN THE_BD_TEAM.Pago p
+        ON p.nro_factura = f.nro_factura
+    LEFT JOIN THE_BD_TEAM.PagoXMedioDePago pmp
+        ON pmp.id_pago = p.id_pago;
 END;
 GO
 
+-- Encuestas
+CREATE PROCEDURE THE_BD_TEAM.BI_MigrarEncuestas
+AS
+BEGIN
+    INSERT INTO THE_BD_TEAM.BI_Hecho_Encuestas
+    (id_profesor, id_sede, id_tiempo, id_bloque_satisfaccion, cantidad_encuestas)
+
+    SELECT c.id_profesor, c.id_sede,
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(e.fecha_registro),
+        THE_BD_TEAM.BI_Clasificar_Encuesta(
+            THE_BD_TEAM.BI_Promedio_Encuesta(e.id_encuesta)
+        ),
+        1  -- una fila por encuesta
+
+    FROM THE_BD_TEAM.Encuesta e
+    JOIN THE_BD_TEAM.Curso c
+        ON (c.cod_curso = e.cod_curso)
+END;
+GO
 
 ----------------
 ---- Vistas ----
@@ -693,6 +817,28 @@ AS
 GO
 
 -- Vista 10: Índice de satisfacción. 
+CREATE VIEW THE_BD_TEAM.BI_V_IndiceSatisfaccion
+AS
+    SELECT s.nombre AS sede, p.rango_etario, t.anio,
+        
+        CAST(((SUM(CASE WHEN b.id_bloque_satisfaccion = 3 THEN e.cantidad_encuestas END) * 100.0 
+                 / SUM(e.cantidad_encuestas)) -
+               (SUM(CASE WHEN b.id_bloque_satisfaccion = 1 THEN e.cantidad_encuestas END) * 100.0 
+                 / SUM(e.cantidad_encuestas)) + 100) / 2
+        AS DECIMAL(10,2)) AS indice_satisfaccion
+
+    FROM THE_BD_TEAM.BI_Hecho_Encuestas e
+    JOIN THE_BD_TEAM.BI_Sede s
+        ON s.id_sede = e.id_sede
+    JOIN THE_BD_TEAM.BI_Tiempo t    
+        ON t.id_tiempo = e.id_tiempo
+    JOIN THE_BD_TEAM.BI_Profesor p  
+        ON p.id_profesor = e.id_profesor
+    JOIN THE_BD_TEAM.BI_BloqueDeSatisfaccion b 
+        ON b.id_bloque_satisfaccion = e.id_bloque_satisfaccion
+
+    GROUP BY s.nombre, p.rango_etario, t.anio
+GO
 
 
 ------------------------------
@@ -707,10 +853,13 @@ BEGIN TRY
         EXEC THE_BD_TEAM.BI_MigrarTiempo
         EXEC THE_BD_TEAM.BI_MigrarAlumno
         EXEC THE_BD_TEAM.BI_MigrarProfesor
+        EXEC THE_BD_TEAM.BI_MigrarMedioDePago
+        EXEC THE_BD_TEAM.BI_MigrarSatisfaccion
         EXEC THE_BD_TEAM.BI_MigrarInscripcion
         EXEC THE_BD_TEAM.BI_MigrarCursada
         EXEC THE_BD_TEAM.BI_MigrarFinales
         EXEC THE_BD_TEAM.BI_MigrarFinanzas
+        EXEC THE_BD_TEAM.BI_MigrarEncuestas
 
     COMMIT TRAN
 END TRY
@@ -718,27 +867,9 @@ BEGIN CATCH
 
     ROLLBACK TRAN;
 
-    /*ROLLBACK TRAN
+    ROLLBACK TRAN
     DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
-    PRINT 'Error en migración: ' + @ErrorMessage;*/
-
-    DECLARE 
-        @Msg NVARCHAR(4000),
-        @ErrMsg NVARCHAR(4000),
-        @ErrLine INT,
-        @ErrProc NVARCHAR(200);
-
-    SET @ErrMsg = ERROR_MESSAGE();
-    SET @ErrLine = ERROR_LINE();
-    SET @ErrProc = ERROR_PROCEDURE();
-
-    SET @Msg = 
-        'ERROR EN MIGRACIÓN' + CHAR(10) +
-        'Procedimiento: ' + ISNULL(@ErrProc, 'N/A') + CHAR(10) +
-        'Línea: ' + CAST(@ErrLine AS VARCHAR(10)) + CHAR(10) +
-        'Mensaje: ' + @ErrMsg;
-
-    PRINT @Msg;
+    PRINT 'Error en migración: ' + @ErrorMessage;
 
 END CATCH
 
@@ -756,4 +887,5 @@ SELECT * FROM THE_BD_TEAM.BI_V_NotaPromedioFinales
 SELECT * FROM THE_BD_TEAM.BI_V_DesvioPagos
 SELECT * FROM THE_BD_TEAM.BI_V_MorosidadMensual
 SELECT * FROM THE_BD_TEAM.BI_V_IngresosPorCategoria
+SELECT * FROM THE_BD_TEAM.BI_V_IndiceSatisfaccion
 */
