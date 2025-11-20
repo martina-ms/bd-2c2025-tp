@@ -973,20 +973,20 @@ BEGIN
     
     SELECT DISTINCT a.legajo, e.id_evaluacion, m.Evaluacion_Curso_Nota, 
                     m.Evaluacion_Curso_Presente
-    FROM gd_esquema.maestra m 
+    FROM gd_esquema.maestra m
     JOIN THE_BD_TEAM.Alumno a
-    ON (a.legajo = m.Alumno_Legajo)
+        ON a.legajo = m.Alumno_Legajo
+    JOIN THE_BD_TEAM.Curso cu
+        ON cu.cod_curso = m.Curso_Codigo
     JOIN THE_BD_TEAM.Modulo mo
-    ON (mo.nombre = m.Modulo_Nombre)
-    JOIN THE_BD_TEAM.Curso cu 
-    ON cu.cod_curso = m.Curso_Codigo
+        ON mo.cod_curso = cu.cod_curso
+       AND mo.nombre = m.Modulo_Nombre
     JOIN THE_BD_TEAM.Evaluacion e
-    ON e.id_modulo = mo.id_modulo
-        AND e.fecha_evaluacion = m.Evaluacion_Curso_fechaEvaluacion
-        AND e.instancia = m.Evaluacion_Curso_Instancia
-    JOIN THE_BD_TEAM.Inscripcion i ON i.legajo = a.legajo 
-        AND i.cod_curso = cu.cod_curso 
-    WHERE m.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+        ON e.id_modulo = mo.id_modulo
+       AND e.fecha_evaluacion = m.Evaluacion_Curso_fechaEvaluacion
+       AND e.instancia = m.Evaluacion_Curso_Instancia
+
+    WHERE m.Evaluacion_Curso_Presente IS NOT NULL
     
 END;
 GO
