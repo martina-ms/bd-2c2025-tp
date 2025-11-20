@@ -715,6 +715,7 @@ BEGIN
     FROM gd_esquema.maestra m 
     JOIN THE_BD_TEAM.Curso c
         ON (c.cod_curso = m.Curso_Codigo)
+    WHERE m.Encuesta_FechaRegistro IS NOT NULL
 END;
 GO
 

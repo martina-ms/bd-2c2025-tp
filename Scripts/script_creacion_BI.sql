@@ -157,9 +157,9 @@ CREATE FUNCTION THE_BD_TEAM.BI_Clasificar_Encuesta(@promedio DECIMAL(5,2))
 RETURNS INT
 AS
 BEGIN
-    IF @promedio BETWEEN 7 AND 10 RETURN 3; -- Satisfecho
-    IF @promedio BETWEEN 5 AND 6 RETURN 2; -- Neutral
-    IF @promedio BETWEEN 1 AND 4 RETURN 1; -- Insatisfecho
+    IF @promedio >= 7 AND @promedio <= 10 RETURN 3;   -- Satisfecho
+    IF @promedio >= 5 AND @promedio < 7  RETURN 2;    -- Neutral
+    IF @promedio >= 1 AND @promedio < 5  RETURN 1;    -- Insatisfecho
     RETURN NULL;
 END;
 GO
@@ -928,5 +928,4 @@ SELECT * FROM THE_BD_TEAM.BI_Hechos_Finales
 SELECT * FROM THE_BD_TEAM.BI_Hechos_Finanzas
 SELECT * FROM THE_BD_TEAM.BI_Hechos_Encuestas
 
---id tiempo es null en encuestas y cursadas
 */
