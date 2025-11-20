@@ -421,6 +421,18 @@ BEGIN
             SELECT fecha_registro AS fecha
             FROM THE_BD_TEAM.Encuesta
             WHERE fecha_registro IS NOT NULL
+
+            UNION
+
+            SELECT fecha_inicio AS fecha
+            FROM THE_BD_TEAM.Curso
+            WHERE fecha_inicio IS NOT NULL
+            
+            UNION
+
+            SELECT fecha_fin AS fecha
+            FROM THE_BD_TEAM.Curso
+            WHERE fecha_fin IS NOT NULL
     ) AS fechas;
        
 END;
@@ -504,7 +516,7 @@ BEGIN
     (id_curso, id_sede, legajo, id_tiempo, nota_promedio, aprobo_cursada)
    
     SELECT c.cod_curso, c.id_sede, tp.legajo,    
-           THE_BD_TEAM.BI_Obtener_Id_Tiempo(tp.fecha_evaluacion), 
+           THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio), 
            
        /* PROMEDIO */
         (SELECT AVG(CONVERT(decimal(10,2), nota))
@@ -513,11 +525,10 @@ BEGIN
 
         /* APROBADO ? (todas >= 4) */
         CASE 
-            WHEN (
-                SELECT MIN(nota)
-                FROM THE_BD_TEAM.BI_Notas_Cursada(tp.legajo, tp.cod_curso)
-            ) >= 4
-            THEN 1 ELSE 0
+        WHEN (
+            SELECT AVG(CONVERT(decimal(10,2), nota))
+            FROM THE_BD_TEAM.BI_Notas_Cursada(tp.legajo, tp.cod_curso)
+        ) >= 4 THEN 1 ELSE 0
         END AS aprobo_cursada
 
     FROM THE_BD_TEAM.Trabajo_Practico tp
