@@ -184,7 +184,7 @@ GO
 ----------------
 
 -- Inscripcion
-CREATE TABLE THE_BD_TEAM.BI_Hecho_Inscripcion (
+CREATE TABLE THE_BD_TEAM.BI_Hechos_Inscripciones (
     id_inscripcion BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL,
     id_curso BIGINT,
     id_sede BIGINT,
@@ -211,7 +211,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hecho_Inscripcion (
 GO
 
 -- Cursada
-CREATE TABLE THE_BD_TEAM.BI_Hecho_Cursada (
+CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
     id_cursada BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL,
     id_curso BIGINT,
     id_sede BIGINT,
@@ -272,7 +272,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
 GO
 
 -- Finanzas
-CREATE TABLE THE_BD_TEAM.BI_Hecho_Finanzas (
+CREATE TABLE THE_BD_TEAM.BI_Hechos_Finanzas (
     id_finanza BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL,
     id_sede BIGINT NOT NULL,
     id_tiempo_emision BIGINT NOT NULL,
@@ -309,7 +309,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hecho_Finanzas (
 GO
 
 -- Encuestas
-CREATE TABLE THE_BD_TEAM.BI_Hecho_Encuestas (
+CREATE TABLE THE_BD_TEAM.BI_Hechos_Encuestas (
     id_encuesta BIGINT IDENTITY(1,1) PRIMARY KEY,
     id_profesor BIGINT,
     id_sede BIGINT,
@@ -481,7 +481,7 @@ GO
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarInscripcion
 AS
 BEGIN
-    INSERT INTO THE_BD_TEAM.BI_Hecho_Inscripcion
+    INSERT INTO THE_BD_TEAM.BI_Hechos_Inscripciones
     (id_curso, id_sede, legajo, estado, id_tiempo)
    
     SELECT i.cod_curso, c.id_sede, i.legajo, ei.estado,
@@ -500,7 +500,7 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarCursada
 AS
 BEGIN
 
-    INSERT INTO THE_BD_TEAM.BI_Hecho_Cursada 
+    INSERT INTO THE_BD_TEAM.BI_Hechos_Cursadas 
     (id_curso, id_sede, legajo, id_tiempo, nota_promedio, aprobo_cursada)
    
     SELECT c.cod_curso, c.id_sede, tp.legajo,    
@@ -561,7 +561,7 @@ GO
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarFinanzas
 AS
 BEGIN
-    INSERT INTO THE_BD_TEAM.BI_Hecho_Finanzas
+    INSERT INTO THE_BD_TEAM.BI_Hechos_Finanzas
     (id_sede, id_medio_pago, id_tiempo_emision, id_tiempo_pago, importe_facturado,
      importe_adeudado, pago_fuera_termino, id_curso, importe_pagado)
     
@@ -631,7 +631,7 @@ GO
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarEncuestas
 AS
 BEGIN
-    INSERT INTO THE_BD_TEAM.BI_Hecho_Encuestas
+    INSERT INTO THE_BD_TEAM.BI_Hechos_Encuestas
     (id_profesor, id_sede, id_tiempo, id_bloque_satisfaccion, cantidad_encuestas)
 
     SELECT c.id_profesor, c.id_sede,
@@ -662,7 +662,7 @@ AS
                     PARTITION BY s.nombre, t.anio
                     ORDER BY COUNT(*) DESC
                 ) AS rn
-            FROM THE_BD_TEAM.BI_Hecho_Inscripcion i
+            FROM THE_BD_TEAM.BI_Hechos_Inscripciones i
             JOIN THE_BD_TEAM.BI_Curso c
                 ON (c.id_curso = i.id_curso)
             JOIN THE_BD_TEAM.BI_Sede s
@@ -681,7 +681,7 @@ AS
         CAST( SUM(CASE WHEN i.estado = 'RECHAZADA' THEN 1 ELSE 0 END) * 100.0
             / COUNT(*) 
         AS DECIMAL(10,2)) AS tasa_rechazo
-    FROM THE_BD_TEAM.BI_Hecho_Inscripcion i
+    FROM THE_BD_TEAM.BI_Hechos_Inscripciones i
     JOIN THE_BD_TEAM.BI_Sede s
         ON s.id_sede = i.id_sede
     JOIN THE_BD_TEAM.BI_Tiempo t
@@ -699,7 +699,7 @@ AS
         CAST(SUM(CASE WHEN hc.aprobo_cursada = 1 THEN 1 ELSE 0 END) * 100.0 
             / COUNT(*)
         AS DECIMAL(10,2)) AS porcentaje_aprobacion_cursada
-    FROM THE_BD_TEAM.BI_Hecho_Cursada hc
+    FROM THE_BD_TEAM.BI_Hechos_Cursadas hc
     JOIN THE_BD_TEAM.BI_Sede s 
         ON s.id_sede = hc.id_sede
     JOIN THE_BD_TEAM.BI_Tiempo t 
@@ -770,7 +770,7 @@ AS
     SELECT s.nombre AS sede, t.anio, t.cuatrimestre,
         CAST(SUM(CASE WHEN f.pago_fuera_termino = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)
         AS DECIMAL(10,2)) AS porcentaje_fuera_de_termino
-    FROM THE_BD_TEAM.BI_Hecho_Finanzas f
+    FROM THE_BD_TEAM.BI_Hechos_Finanzas f
     JOIN THE_BD_TEAM.BI_Sede s
         ON (s.id_sede = f.id_sede)
     JOIN THE_BD_TEAM.BI_Tiempo t
@@ -785,7 +785,7 @@ AS
         CAST(SUM(f.importe_adeudado) * 100.0 /
             NULLIF(SUM(f.importe_facturado), 0)
             AS DECIMAL(10,2)) AS tasa_morosidad
-    FROM THE_BD_TEAM.BI_Hecho_Finanzas f
+    FROM THE_BD_TEAM.BI_Hechos_Finanzas f
     JOIN THE_BD_TEAM.BI_Sede s
         ON (s.id_sede = f.id_sede)
     JOIN THE_BD_TEAM.BI_Tiempo t
@@ -804,7 +804,7 @@ AS
                 PARTITION BY s.nombre, t.anio
                 ORDER BY SUM(f.importe_pagado) DESC
             ) AS rn
-          FROM THE_BD_TEAM.BI_Hecho_Finanzas f
+          FROM THE_BD_TEAM.BI_Hechos_Finanzas f
           JOIN THE_BD_TEAM.BI_Sede s
               ON s.id_sede = f.id_sede
           JOIN THE_BD_TEAM.BI_Tiempo t
@@ -827,7 +827,7 @@ AS
                  / SUM(e.cantidad_encuestas)) + 100) / 2
         AS DECIMAL(10,2)) AS indice_satisfaccion
 
-    FROM THE_BD_TEAM.BI_Hecho_Encuestas e
+    FROM THE_BD_TEAM.BI_Hechos_Encuestas e
     JOIN THE_BD_TEAM.BI_Sede s
         ON s.id_sede = e.id_sede
     JOIN THE_BD_TEAM.BI_Tiempo t    
@@ -873,6 +873,7 @@ BEGIN CATCH
 
 END CATCH
 
+
 ------------------------------
 ------ Test de Vistas --------
 ------------------------------
@@ -888,4 +889,33 @@ SELECT * FROM THE_BD_TEAM.BI_V_DesvioPagos
 SELECT * FROM THE_BD_TEAM.BI_V_MorosidadMensual
 SELECT * FROM THE_BD_TEAM.BI_V_IngresosPorCategoria
 SELECT * FROM THE_BD_TEAM.BI_V_IndiceSatisfaccion
+
+--DIMENSIONES
+
+SELECT * FROM THE_BD_TEAM.BI_Curso
+SELECT * FROM THE_BD_TEAM.Curso
+
+SELECT * FROM THE_BD_TEAM.BI_Tiempo
+
+SELECT * FROM THE_BD_TEAM.BI_Alumno --14980
+SELECT * FROM THE_BD_TEAM.Alumno
+
+SELECT * FROM THE_BD_TEAM.BI_Profesor
+SELECT * FROM THE_BD_TEAM.Profesor
+
+SELECT * FROM THE_BD_TEAM.BI_Sede
+SELECT * FROM THE_BD_TEAM.Sede
+
+SELECT * FROM THE_BD_TEAM.BI_MedioDePago
+SELECT * FROM THE_BD_TEAM.BI_BloqueDeSatisfaccion
+
+--HECHOS
+
+SELECT * FROM THE_BD_TEAM.BI_Hechos_Inscripciones
+SELECT * FROM THE_BD_TEAM.BI_Hechos_Cursadas
+SELECT * FROM THE_BD_TEAM.BI_Hechos_Finales
+SELECT * FROM THE_BD_TEAM.BI_Hechos_Finanzas
+SELECT * FROM THE_BD_TEAM.BI_Hechos_Encuestas
+
+--id tiempo es null en encuestas y cursadas
 */
