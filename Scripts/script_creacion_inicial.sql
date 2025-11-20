@@ -1,5 +1,5 @@
 -- ============================================================
--- SCRIPT DE CREACIÓN Y MIGRACIÓN DE DATOS
+-- SCRIPT DE CREACIÃ“N Y MIGRACIÃ“N DE DATOS
 -- Grupo: THE_BD_TEAM
 -- Curso: K3522
 -- Integrantes: Calzado, Chazarreta y Mendez Spahn
@@ -8,12 +8,12 @@
 USE GD2C2025
 GO
 
--- 1. CREACIÓN DEL ESQUEMA
+-- 1. CREACIÃ“N DEL ESQUEMA
 
 CREATE SCHEMA THE_BD_TEAM;
 GO
 
--- 2. CREACIÓN DE TABLAS
+-- 2. CREACIÃ“N DE TABLAS
 
 -- Dia
 CREATE TABLE THE_BD_TEAM.Dia (
@@ -385,7 +385,7 @@ GO
 
 -- Dia X Curso
 CREATE TABLE THE_BD_TEAM.DiaXCurso (
-    id_dia BIGINT NOT NULL, -- FK al Día.
+    id_dia BIGINT NOT NULL, -- FK al DÃ­a.
     cod_curso BIGINT NOT NULL, -- FK al Curso.
 
     CONSTRAINT PK_DiaXCurso -- Define la clave primaria compuesta por las dos FK.
@@ -439,7 +439,7 @@ CREATE TABLE THE_BD_TEAM.AlumnoXEvaluacion (
 );
 GO
 
--- 3. CREACIÓN DE STORED PROCEDURES DE MIGRACIÓN
+-- 3. CREACIÃ“N DE STORED PROCEDURES DE MIGRACIÃ“N
 
 -- Dia
 CREATE PROCEDURE THE_BD_TEAM.MigrarDia --Procedimiento para migrar la tabla Dia
@@ -678,10 +678,10 @@ BEGIN
     FROM gd_esquema.maestra m 
     JOIN THE_BD_TEAM.Profesor p -- Une con Profesor para obtener id_profesor (usando DNI).
         ON (p.dni = m.Profesor_Dni)
-    JOIN THE_BD_TEAM.Sede s -- Une con Sede para obtener id_sede (usando nombre y dirección).
+    JOIN THE_BD_TEAM.Sede s -- Une con Sede para obtener id_sede (usando nombre y direcciÃ³n).
         ON (s.nombre = m.Sede_Nombre
         AND s.direccion = m.Sede_Direccion)
-    JOIN THE_BD_TEAM.Categoria ca -- Une con Categoria para obtener id_categoria (usando nombre de categoría).
+    JOIN THE_BD_TEAM.Categoria ca -- Une con Categoria para obtener id_categoria (usando nombre de categorÃ­a).
         ON (ca.categoria = m.Curso_Categoria)
     JOIN THE_BD_TEAM.Turno t -- Une con Turno para obtener id_turno (usando nombre del turno).
         ON (t.turno = m.Curso_Turno)
@@ -975,17 +975,23 @@ BEGIN
                     m.Evaluacion_Curso_Presente
     FROM gd_esquema.maestra m 
     JOIN THE_BD_TEAM.Alumno a
-        ON (a.legajo = m.Alumno_Legajo)
+    ON (a.legajo = m.Alumno_Legajo)
     JOIN THE_BD_TEAM.Modulo mo
-        ON (mo.nombre = m.Modulo_Nombre)
+    ON (mo.nombre = m.Modulo_Nombre)
+    JOIN THE_BD_TEAM.Curso cu 
+    ON cu.cod_curso = m.Curso_Codigo
     JOIN THE_BD_TEAM.Evaluacion e
-        ON (e.id_modulo = mo.id_modulo
+    ON e.id_modulo = mo.id_modulo
         AND e.fecha_evaluacion = m.Evaluacion_Curso_fechaEvaluacion
-        AND e.instancia = m.Evaluacion_Curso_Instancia)
+        AND e.instancia = m.Evaluacion_Curso_Instancia
+    JOIN THE_BD_TEAM.Inscripcion i ON i.legajo = a.legajo 
+        AND i.cod_curso = cu.cod_curso 
+    WHERE m.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+    
 END;
 GO
 
--- 4. EJECUCIÓN DE LAS MIGRACIONES 
+-- 4. EJECUCIÃ“N DE LAS MIGRACIONES 
 
 BEGIN TRY 
     BEGIN TRAN --transaccion para asegurar que todos los datos se migren correctamente o que no se migre nada en caso de error.
@@ -1026,6 +1032,6 @@ BEGIN CATCH
 
     ROLLBACK TRAN
     DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
-    PRINT 'Error en migración: ' + @ErrorMessage;
+    PRINT 'Error en migraciÃ³n: ' + @ErrorMessage;
 
 END CATCH
