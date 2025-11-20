@@ -729,7 +729,7 @@ GO
 -- Vista 5: Nota promedio de finales. 
 CREATE VIEW THE_BD_TEAM.BI_V_NotaPromedioFinales
 AS
-    SELECT t.anio, t.cuatrimestre AS semestre, --rariiiiiiiiiiiiiiiiiiiiiiii
+    SELECT t.anio, t.cuatrimestre,
         a.rango_etario,cur.categoria,
         CAST(AVG(hf.nota_final) AS DECIMAL(10,2)) AS nota_promedio_final
 
@@ -767,7 +767,7 @@ GO
 -- Vista 7: Desvío de pagos.
 CREATE VIEW THE_BD_TEAM.BI_V_DesvioPagos
 AS
-    SELECT s.nombre AS sede, t.anio, t.cuatrimestre AS semestre,
+    SELECT s.nombre AS sede, t.anio, t.cuatrimestre,
         CAST(SUM(CASE WHEN f.pago_fuera_termino = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)
         AS DECIMAL(10,2)) AS porcentaje_fuera_de_termino
     FROM THE_BD_TEAM.BI_Hecho_Finanzas f
