@@ -48,15 +48,15 @@ GO
 
 -- Alumno
 CREATE TABLE THE_BD_TEAM.BI_Alumno (
-    legajo BIGINT PRIMARY KEY NOT NULL, 
-    rango_etario NVARCHAR(255)
+    id_rango_etario_alumno BIGINT PRIMARY KEY,
+    rango_etario NVARCHAR(255),
 );
 GO
 
 -- Profesor
 CREATE TABLE THE_BD_TEAM.BI_Profesor (
-    id_profesor BIGINT PRIMARY KEY NOT NULL, 
-    rango_etario NVARCHAR(255)
+    id_rango_etario_profesor BIGINT PRIMARY KEY,
+    rango_etario NVARCHAR(255),
 );
 GO
 
@@ -97,21 +97,35 @@ END;
 GO
 
 -- Rango etario
-CREATE FUNCTION THE_BD_TEAM.BI_Obtener_Rango_Etario(@fecha_nacimiento DATE) 
-RETURNS NVARCHAR(20) 
-AS 
-BEGIN 
-    DECLARE @edad INT;
+CREATE FUNCTION THE_BD_TEAM.BI_Clasificar_Rango_Alumno(@fecha_nacimiento DATE)
+RETURNS BIGINT
+AS
+BEGIN
     IF @fecha_nacimiento IS NULL RETURN NULL;
 
-    SET @edad = DATEDIFF(YEAR, @fecha_nacimiento, GETDATE());
+    DECLARE @edad INT = DATEDIFF(YEAR, @fecha_nacimiento, GETDATE());
 
-    IF @edad < 25 RETURN '<25';
-    IF @edad BETWEEN 25 AND 35 RETURN '25-35';
-    IF @edad BETWEEN 36 AND 50 RETURN '35-50';
-    RETURN '>50';
+    IF @edad < 25 RETURN 1;
+    IF @edad BETWEEN 25 AND 35 RETURN 2;
+    IF @edad BETWEEN 36 AND 50 RETURN 3;
+    RETURN 4;
 END;
 GO
+
+CREATE FUNCTION THE_BD_TEAM.BI_Clasificar_Rango_Profesor(@fecha_nacimiento DATE)
+RETURNS BIGINT
+AS
+BEGIN
+    IF @fecha_nacimiento IS NULL RETURN NULL;
+
+    DECLARE @edad INT = DATEDIFF(YEAR, @fecha_nacimiento, GETDATE());
+
+    IF @edad BETWEEN 25 AND 35 RETURN 1;
+    IF @edad BETWEEN 36 AND 50 RETURN 2;
+    RETURN 3;
+END;
+GO
+
 
 -- Notas
 CREATE FUNCTION THE_BD_TEAM.BI_Notas_Cursada(@legajo BIGINT, @cod_curso BIGINT)
@@ -128,6 +142,7 @@ RETURN
         ON m.id_modulo = ev.id_modulo
     WHERE axe.legajo = @legajo
       AND m.cod_curso = @cod_curso
+      AND axe.presente = 1
 
     UNION ALL
     
@@ -189,7 +204,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Inscripciones (
     id_curso BIGINT,
     id_sede BIGINT,
     id_tiempo BIGINT,
-    legajo BIGINT,
+    id_rango_etario_alumno BIGINT,
     estado VARCHAR(255)
 
     CONSTRAINT FK_BI_Inscripcion_Curso
@@ -205,8 +220,8 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Inscripciones (
     REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo), 
 
     CONSTRAINT FK_BI_Inscripcion_Alumno
-    FOREIGN KEY (legajo)
-    REFERENCES THE_BD_TEAM.BI_Alumno(legajo)
+    FOREIGN KEY (id_rango_etario_alumno)
+    REFERENCES THE_BD_TEAM.BI_Alumno(id_rango_etario_alumno)
 );
 GO
 
@@ -216,7 +231,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
     id_curso BIGINT,
     id_sede BIGINT,
     id_tiempo BIGINT,
-    legajo BIGINT,
+    id_rango_etario_alumno BIGINT,
     nota_promedio DECIMAL(4,2),
     aprobo_cursada BIT,
 
@@ -234,8 +249,8 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
     REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
 
     CONSTRAINT FK_BI_Cursada_Alumno
-    FOREIGN KEY (legajo)
-    REFERENCES THE_BD_TEAM.BI_Alumno(legajo)
+    FOREIGN KEY (id_rango_etario_alumno)
+    REFERENCES THE_BD_TEAM.BI_Alumno(id_rango_etario_alumno)
 );
 GO
 
@@ -243,7 +258,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     id_hechos_final BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL,
     FK_tiempo BIGINT NOT NULL,
     FK_sede BIGINT NOT NULL,
-    FK_alumno BIGINT NOT NULL,
+    id_rango_etario_alumno BIGINT NOT NULL,
     FK_curso BIGINT NOT NULL,
     
     nota_final DECIMAL(4,2),                                   
@@ -261,8 +276,8 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     REFERENCES THE_BD_TEAM.BI_Sede(id_sede),
 
     CONSTRAINT FK_BI_Finales_Alumno
-    FOREIGN KEY (FK_alumno)
-    REFERENCES THE_BD_TEAM.BI_Alumno(legajo),
+    FOREIGN KEY (id_rango_etario_alumno)
+    REFERENCES THE_BD_TEAM.BI_Alumno(id_rango_etario_alumno),
 
     CONSTRAINT FK_BI_Finales_Curso
     FOREIGN KEY (FK_curso)
@@ -311,7 +326,7 @@ GO
 -- Encuestas
 CREATE TABLE THE_BD_TEAM.BI_Hechos_Encuestas (
     id_encuesta BIGINT IDENTITY(1,1) PRIMARY KEY,
-    id_profesor BIGINT,
+    id_rango_etario_profesor BIGINT,
     id_sede BIGINT,
     id_tiempo BIGINT,
     id_bloque_satisfaccion BIGINT,
@@ -326,8 +341,8 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Encuestas (
     REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
 
     CONSTRAINT FK_BI_Encuestas_Profesor
-    FOREIGN KEY (id_profesor)
-    REFERENCES THE_BD_TEAM.BI_Profesor(id_profesor),
+    FOREIGN KEY (id_rango_etario_profesor)
+    REFERENCES THE_BD_TEAM.BI_Profesor(id_rango_etario_profesor),
 
     CONSTRAINT FK_BI_Encuestas_Satisfaccion
     FOREIGN KEY (id_bloque_satisfaccion)
@@ -442,12 +457,12 @@ GO
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarAlumno
 AS
 BEGIN
-    INSERT INTO THE_BD_TEAM.BI_Alumno (legajo, rango_etario)
-    SELECT DISTINCT
-        a.legajo,
-        THE_BD_TEAM.BI_Obtener_Rango_Etario(a.fechaNacimiento)
-    FROM THE_BD_TEAM.Alumno a
-    WHERE a.legajo IS NOT NULL;
+    INSERT INTO THE_BD_TEAM.BI_Alumno (id_rango_etario_alumno, rango_etario)
+    VALUES 
+        (1, '<25'),
+        (2, '25-35'),
+        (3, '35-50'),
+        (4, '>50')
 END;
 GO
 
@@ -455,12 +470,11 @@ GO
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarProfesor
 AS
 BEGIN
-    INSERT INTO THE_BD_TEAM.BI_Profesor (id_profesor, rango_etario)
-    SELECT DISTINCT
-        p.id_profesor,
-        THE_BD_TEAM.BI_Obtener_Rango_Etario(p.fecha_nacimiento)
-    FROM THE_BD_TEAM.Profesor p
-    WHERE p.id_profesor IS NOT NULL;
+    INSERT INTO THE_BD_TEAM.BI_Profesor (id_rango_etario_profesor, rango_etario)
+    VALUES 
+        (1, '25-35'),
+        (2, '35-50'),
+        (3, '>50')
 END;
 GO
 
@@ -494,16 +508,19 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarInscripcion
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Inscripciones
-    (id_curso, id_sede, legajo, estado, id_tiempo)
-   
-    SELECT i.cod_curso, c.id_sede, i.legajo, ei.estado,
-        THE_BD_TEAM.BI_Obtener_Id_Tiempo(i.fecha_inscripcion)
-        
+        (id_curso, id_sede, estado, id_tiempo, id_rango_etario_alumno)
+
+    SELECT  i.cod_curso, c.id_sede, ei.estado,
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(i.fecha_inscripcion),
+        THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento)
+       
     FROM THE_BD_TEAM.Inscripcion i
     JOIN THE_BD_TEAM.Curso c 
-        ON (c.cod_curso = i.cod_curso)
+        ON c.cod_curso = i.cod_curso
     JOIN THE_BD_TEAM.EstadoInscripcion ei 
-        ON (ei.id_EstadoInscripcion = i.id_EstadoInscripcion)
+        ON ei.id_EstadoInscripcion = i.id_EstadoInscripcion
+    JOIN THE_BD_TEAM.Alumno a 
+        ON a.legajo = i.legajo;
 END;
 GO
 
@@ -513,27 +530,32 @@ AS
 BEGIN
 
     INSERT INTO THE_BD_TEAM.BI_Hechos_Cursadas 
-    (id_curso, id_sede, legajo, id_tiempo, nota_promedio, aprobo_cursada)
+    (id_curso, id_sede, id_rango_etario_alumno, id_tiempo, nota_promedio, aprobo_cursada)
    
-    SELECT c.cod_curso, c.id_sede, tp.legajo,    
-           THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio), 
-           
-       /* PROMEDIO */
-        (SELECT AVG(CONVERT(decimal(10,2), nota))
-         FROM THE_BD_TEAM.BI_Notas_Cursada(tp.legajo, tp.cod_curso)
-        ) AS nota_promedio,
+    SELECT c.cod_curso, c.id_sede,
+        THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio),
 
-        /* APROBADO ? (todas >= 4) */
-        CASE 
-        WHEN (
+        /* PROMEDIO DE NOTAS */
+        (
             SELECT AVG(CONVERT(decimal(10,2), nota))
             FROM THE_BD_TEAM.BI_Notas_Cursada(tp.legajo, tp.cod_curso)
-        ) >= 4 THEN 1 ELSE 0
+        ) AS nota_promedio,
+
+        /* APROBADO ? (promedio >= 4) */
+        CASE 
+            WHEN (
+                SELECT AVG(CONVERT(decimal(10,2), nota))
+                FROM THE_BD_TEAM.BI_Notas_Cursada(tp.legajo, tp.cod_curso)
+            ) >= 4 THEN 1 
+            ELSE 0
         END AS aprobo_cursada
 
     FROM THE_BD_TEAM.Trabajo_Practico tp
-        JOIN THE_BD_TEAM.Curso c
-        ON (c.cod_curso = tp.cod_curso)
+    JOIN THE_BD_TEAM.Curso c
+        ON c.cod_curso = tp.cod_curso
+    JOIN THE_BD_TEAM.Alumno a
+        ON a.legajo = tp.legajo;
 END;
 GO
 
@@ -542,11 +564,12 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarFinales
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Finales
-    (FK_tiempo, FK_sede, FK_alumno, FK_curso, nota_final, aprobo_final, 
+    (FK_tiempo, FK_sede, FK_curso, nota_final, id_rango_etario_alumno, aprobo_final, 
     ausente, cant_inscriptos,dias_hasta_aprobacion_final)
     
     SELECT THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha) AS FK_tiempo,
-        cur.id_sede, ef.legajo, mf.cod_curso, ef.nota,
+        cur.id_sede, mf.cod_curso, ef.nota,
+        THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         CASE WHEN ef.nota IS NOT NULL AND ef.nota >= 4 THEN 1 ELSE 0 END AS aprobo_final,
         CASE WHEN ef.nota IS NULL THEN 1 ELSE 0 END AS ausente,
         1 AS cant_inscriptos,
@@ -562,9 +585,11 @@ BEGIN
     JOIN THE_BD_TEAM.Curso cur 
         ON cur.cod_curso = mf.cod_curso
     JOIN THE_BD_TEAM.Examen_Final ef
-        ON mf.id_mesa = ef.id_mesa
-    WHERE 
-        mf.fecha IS NOT NULL;
+        ON ef.id_mesa = mf.id_mesa
+    JOIN THE_BD_TEAM.Alumno a
+        ON a.legajo = ef.legajo
+    WHERE mf.fecha IS NOT NULL;
+
 END;
 GO
 
@@ -643,18 +668,19 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarEncuestas
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Encuestas
-    (id_profesor, id_sede, id_tiempo, id_bloque_satisfaccion, cantidad_encuestas)
+    (id_rango_etario_profesor, id_sede, id_tiempo, id_bloque_satisfaccion, cantidad_encuestas)
 
-    SELECT c.id_profesor, c.id_sede,
+    SELECT THE_BD_TEAM.BI_Clasificar_Rango_Profesor(p.fecha_nacimiento), c.id_sede,
         THE_BD_TEAM.BI_Obtener_Id_Tiempo(e.fecha_registro),
         THE_BD_TEAM.BI_Clasificar_Encuesta(
             THE_BD_TEAM.BI_Promedio_Encuesta(e.id_encuesta)
-        ),
-        1  -- una fila por encuesta
+        ), 1  -- una fila por encuesta
 
     FROM THE_BD_TEAM.Encuesta e
     JOIN THE_BD_TEAM.Curso c
-        ON (c.cod_curso = e.cod_curso)
+        ON c.cod_curso = e.cod_curso
+    JOIN THE_BD_TEAM.Profesor p
+        ON p.id_profesor = c.id_profesor
 END;
 GO
 
@@ -748,7 +774,7 @@ AS
     JOIN THE_BD_TEAM.BI_Tiempo t
         ON t.id_tiempo = hf.FK_tiempo
     JOIN THE_BD_TEAM.BI_Alumno a
-        ON a.legajo = hf.FK_alumno
+        ON a.id_rango_etario_alumno = hf.id_rango_etario_alumno
     JOIN THE_BD_TEAM.BI_Curso cur
         ON cur.id_curso = hf.FK_curso
     
@@ -844,7 +870,7 @@ AS
     JOIN THE_BD_TEAM.BI_Tiempo t    
         ON t.id_tiempo = e.id_tiempo
     JOIN THE_BD_TEAM.BI_Profesor p  
-        ON p.id_profesor = e.id_profesor
+        ON p.id_rango_etario_profesor = e.id_rango_etario_profesor
     JOIN THE_BD_TEAM.BI_BloqueDeSatisfaccion b 
         ON b.id_bloque_satisfaccion = e.id_bloque_satisfaccion
 
@@ -875,8 +901,6 @@ BEGIN TRY
     COMMIT TRAN
 END TRY
 BEGIN CATCH
-
-    ROLLBACK TRAN;
 
     ROLLBACK TRAN
     DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
