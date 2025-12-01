@@ -126,34 +126,6 @@ BEGIN
 END;
 GO
 
-
--- Notas
-CREATE FUNCTION THE_BD_TEAM.BI_Notas_Cursada(@legajo BIGINT, @cod_curso BIGINT)
-RETURNS TABLE
-AS
-RETURN
-(
-    -- Notas de módulos
-    SELECT COALESCE(axe.nota, 0) AS nota
-    FROM THE_BD_TEAM.AlumnoXEvaluacion axe
-    JOIN THE_BD_TEAM.Evaluacion ev 
-        ON ev.id_evaluacion = axe.id_evaluacion
-    JOIN THE_BD_TEAM.Modulo m
-        ON m.id_modulo = ev.id_modulo
-    WHERE axe.legajo = @legajo
-      AND m.cod_curso = @cod_curso
-      AND axe.presente = 1
-
-    UNION ALL
-    
-    -- Nota TP
-    SELECT COALESCE(tp.nota, 0) AS nota
-    FROM THE_BD_TEAM.Trabajo_Practico tp
-    WHERE tp.legajo = @legajo
-      AND tp.cod_curso = @cod_curso
-);
-GO
-
 -- Dias transcurridos entre dos fechas
 CREATE FUNCTION THE_BD_TEAM.BI_Calcular_Dias_Transcurridos(@fecha_inicio DATE, @fecha_final DATE) 
 RETURNS INT 
@@ -168,7 +140,7 @@ END;
 GO
 
 -- Clasificar Encuesta
-CREATE FUNCTION THE_BD_TEAM.BI_Clasificar_Encuesta(@promedio DECIMAL(5,2))
+CREATE FUNCTION THE_BD_TEAM.BI_Clasificar_Respuesta(@promedio DECIMAL(5,2))
 RETURNS INT
 AS
 BEGIN
@@ -232,9 +204,6 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
     id_sede BIGINT,
     id_tiempo BIGINT,
     id_rango_etario_alumno BIGINT,
-    nota_promedio DECIMAL(4,2),
-    aprobo_cursada BIT,
-
 
     CONSTRAINT FK_BI_Cursada_Curso
     FOREIGN KEY (id_curso)
@@ -254,6 +223,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
 );
 GO
 
+-- Finales
 CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     id_hechos_final BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL,
     FK_tiempo BIGINT NOT NULL,
@@ -330,7 +300,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Encuestas (
     id_sede BIGINT,
     id_tiempo BIGINT,
     id_bloque_satisfaccion BIGINT,
-    cantidad_encuestas INT,
+    cantidad_respuestas INT,
 
     CONSTRAINT FK_BI_Encuestas_Sede
     FOREIGN KEY (id_sede)
@@ -528,34 +498,22 @@ GO
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarCursada
 AS
 BEGIN
-
     INSERT INTO THE_BD_TEAM.BI_Hechos_Cursadas 
-    (id_curso, id_sede, id_rango_etario_alumno, id_tiempo, nota_promedio, aprobo_cursada)
-   
-    SELECT c.cod_curso, c.id_sede,
-        THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
-        THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio),
+        (id_curso, id_sede, id_rango_etario_alumno, id_tiempo)
 
-        /* PROMEDIO DE NOTAS */
-        (
-            SELECT AVG(CONVERT(decimal(10,2), nota))
-            FROM THE_BD_TEAM.BI_Notas_Cursada(tp.legajo, tp.cod_curso)
-        ) AS nota_promedio,
+    SELECT  c.cod_curso, c.id_sede, THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio)
 
-        /* APROBADO ? (promedio >= 4) */
-        CASE 
-            WHEN (
-                SELECT AVG(CONVERT(decimal(10,2), nota))
-                FROM THE_BD_TEAM.BI_Notas_Cursada(tp.legajo, tp.cod_curso)
-            ) >= 4 THEN 1 
-            ELSE 0
-        END AS aprobo_cursada
-
-    FROM THE_BD_TEAM.Trabajo_Practico tp
-    JOIN THE_BD_TEAM.Curso c
-        ON c.cod_curso = tp.cod_curso
+    FROM THE_BD_TEAM.Inscripcion i
+    JOIN THE_BD_TEAM.Curso c 
+        ON c.cod_curso = i.cod_curso
     JOIN THE_BD_TEAM.Alumno a
-        ON a.legajo = tp.legajo;
+        ON a.legajo = i.legajo
+
+    WHERE i.id_EstadoInscripcion = 
+          (SELECT id_EstadoInscripcion 
+           FROM THE_BD_TEAM.EstadoInscripcion 
+           WHERE estado = 'Confirmada');
 END;
 GO
 
@@ -668,19 +626,29 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarEncuestas
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Encuestas
-    (id_rango_etario_profesor, id_sede, id_tiempo, id_bloque_satisfaccion, cantidad_encuestas)
+        (id_rango_etario_profesor, id_sede, id_tiempo, id_bloque_satisfaccion, cantidad_respuestas)
 
-    SELECT THE_BD_TEAM.BI_Clasificar_Rango_Profesor(p.fecha_nacimiento), c.id_sede,
-        THE_BD_TEAM.BI_Obtener_Id_Tiempo(e.fecha_registro),
-        THE_BD_TEAM.BI_Clasificar_Encuesta(
-            THE_BD_TEAM.BI_Promedio_Encuesta(e.id_encuesta)
-        ), 1  -- una fila por encuesta
+    SELECT  THE_BD_TEAM.BI_Clasificar_Rango_Profesor(p.fecha_nacimiento) AS id_rango_prof,
+        c.id_sede,
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(e.fecha_registro) AS id_tiempo,
+        THE_BD_TEAM.BI_Clasificar_Respuesta(r.nota) AS id_bloque_satisfaccion,
+        COUNT(*) AS cantidad_respuestas
 
-    FROM THE_BD_TEAM.Encuesta e
+    FROM THE_BD_TEAM.Respuesta r
+    JOIN THE_BD_TEAM.Encuesta e
+        ON e.id_encuesta = r.id_encuesta
     JOIN THE_BD_TEAM.Curso c
         ON c.cod_curso = e.cod_curso
     JOIN THE_BD_TEAM.Profesor p
         ON p.id_profesor = c.id_profesor
+
+    WHERE r.nota IS NOT NULL
+
+    GROUP BY  
+        THE_BD_TEAM.BI_Clasificar_Rango_Profesor(p.fecha_nacimiento),
+        c.id_sede,
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(e.fecha_registro),
+        THE_BD_TEAM.BI_Clasificar_Respuesta(r.nota);
 END;
 GO
 
@@ -729,19 +697,46 @@ GO
 --Vista 3: Comparación de desempeño de cursada por sede.
 CREATE VIEW THE_BD_TEAM.BI_V_TasaAprobacionCursada
 AS
-    SELECT
-        s.nombre as sede,
-        t.anio,
-        -- (Suma de aprobados / Total de cursadas) * 100
-        CAST(SUM(CASE WHEN hc.aprobo_cursada = 1 THEN 1 ELSE 0 END) * 100.0 
-            / COUNT(*)
-        AS DECIMAL(10,2)) AS porcentaje_aprobacion_cursada
-    FROM THE_BD_TEAM.BI_Hechos_Cursadas hc
+    SELECT  s.nombre AS sede, t.anio,
+        CAST( SUM(CASE WHEN A.aprobo = 1 THEN 1 ELSE 0 END) * 100.0
+            / COUNT(*) AS DECIMAL(10,2)) AS tasa_aprobacion
+    FROM THE_BD_TEAM.Inscripcion i
+    JOIN THE_BD_TEAM.Curso c  
+        ON c.cod_curso = i.cod_curso
     JOIN THE_BD_TEAM.BI_Sede s 
-        ON s.id_sede = hc.id_sede
+        ON s.id_sede = c.id_sede
     JOIN THE_BD_TEAM.BI_Tiempo t 
-        ON t.id_tiempo = hc.id_tiempo 
-    GROUP BY s.nombre, t.anio
+        ON t.anio = YEAR(c.fecha_inicio)
+       AND t.mes  = MONTH(c.fecha_inicio)
+
+    JOIN (SELECT i.legajo, i.cod_curso,
+            CASE 
+                WHEN (SELECT COUNT(*) 
+                     FROM THE_BD_TEAM.Modulo m
+                     WHERE m.cod_curso = i.cod_curso) =
+                    (SELECT COUNT(*)
+                     FROM THE_BD_TEAM.AlumnoXEvaluacion axe
+                    JOIN THE_BD_TEAM.Evaluacion ev ON ev.id_evaluacion = axe.id_evaluacion
+                    JOIN THE_BD_TEAM.Modulo m ON m.id_modulo = ev.id_modulo
+                    WHERE axe.legajo = i.legajo
+                        AND axe.presente = 1
+                        AND axe.nota >= 4
+                        AND m.cod_curso = i.cod_curso)
+                AND EXISTS (
+                    SELECT 1
+                    FROM THE_BD_TEAM.Trabajo_Practico tp
+                    WHERE tp.legajo = i.legajo
+                      AND tp.cod_curso = i.cod_curso
+                      AND tp.nota >= 4)
+                THEN 1 ELSE 0 END AS aprobo
+        FROM THE_BD_TEAM.Inscripcion i
+        WHERE i.id_EstadoInscripcion = (
+            SELECT id_EstadoInscripcion 
+            FROM THE_BD_TEAM.EstadoInscripcion 
+            WHERE estado = 'Confirmada')
+    ) A ON A.cod_curso = i.cod_curso AND A.legajo = i.legajo
+
+    GROUP BY s.nombre, t.anio;
 GO
 
 -- Vista 4: Tiempo promedio de finalización de curso.
@@ -753,10 +748,8 @@ AS
         AS DECIMAL(10,2)) AS tiempo_promedio_dias
 
     FROM THE_BD_TEAM.BI_Hechos_Finales hf
-    
     JOIN THE_BD_TEAM.BI_Curso cur
         ON cur.id_curso = hf.FK_curso
-    
     WHERE hf.aprobo_final = 1 
         AND hf.dias_hasta_aprobacion_final IS NOT NULL
     
@@ -766,20 +759,21 @@ GO
 -- Vista 5: Nota promedio de finales. 
 CREATE VIEW THE_BD_TEAM.BI_V_NotaPromedioFinales
 AS
-    SELECT t.anio, t.cuatrimestre,
-        a.rango_etario,cur.categoria,
-        CAST(AVG(hf.nota_final) AS DECIMAL(10,2)) AS nota_promedio_final
+    SELECT t.anio, t.cuatrimestre AS semestre, a.rango_etario AS rango_etario_alumno,
+        c.categoria, CAST(AVG(hf.nota_final) AS DECIMAL(10,2)) AS nota_promedio_final
 
     FROM THE_BD_TEAM.BI_Hechos_Finales hf
     JOIN THE_BD_TEAM.BI_Tiempo t
         ON t.id_tiempo = hf.FK_tiempo
     JOIN THE_BD_TEAM.BI_Alumno a
         ON a.id_rango_etario_alumno = hf.id_rango_etario_alumno
-    JOIN THE_BD_TEAM.BI_Curso cur
-        ON cur.id_curso = hf.FK_curso
-    
-    WHERE hf.ausente = 0   
-    GROUP BY t.anio, t.cuatrimestre, a.rango_etario, cur.categoria
+    JOIN THE_BD_TEAM.BI_Curso c
+        ON c.id_curso = hf.FK_curso
+
+    WHERE hf.ausente = 0
+      AND hf.nota_final IS NOT NULL
+
+    GROUP BY t.anio, t.cuatrimestre, a.rango_etario, c.categoria
 GO
 
 -- Vista 6: Tasa de ausentismo finales.
@@ -856,23 +850,22 @@ GO
 -- Vista 10: Índice de satisfacción. 
 CREATE VIEW THE_BD_TEAM.BI_V_IndiceSatisfaccion
 AS
-    SELECT s.nombre AS sede, p.rango_etario, t.anio,
-        
-        CAST(((SUM(CASE WHEN b.id_bloque_satisfaccion = 3 THEN e.cantidad_encuestas END) * 100.0 
-                 / SUM(e.cantidad_encuestas)) -
-               (SUM(CASE WHEN b.id_bloque_satisfaccion = 1 THEN e.cantidad_encuestas END) * 100.0 
-                 / SUM(e.cantidad_encuestas)) + 100) / 2
-        AS DECIMAL(10,2)) AS indice_satisfaccion
+    SELECT s.nombre AS sede, p.rango_etario AS rango_profesor, t.anio,
+        CAST(((SUM(CASE WHEN b.id_bloque_satisfaccion = 3 THEN he.cantidad_respuestas END) * 100.0 
+                    / NULLIF(SUM(he.cantidad_respuestas),0))
+                - (SUM(CASE WHEN b.id_bloque_satisfaccion = 1 THEN he.cantidad_respuestas END) * 100.0 
+                    / NULLIF(SUM(he.cantidad_respuestas),0))
+                + 100) / 2 AS DECIMAL(10,2)) AS indice_satisfaccion
 
-    FROM THE_BD_TEAM.BI_Hechos_Encuestas e
+    FROM THE_BD_TEAM.BI_Hechos_Encuestas he
     JOIN THE_BD_TEAM.BI_Sede s
-        ON s.id_sede = e.id_sede
-    JOIN THE_BD_TEAM.BI_Tiempo t    
-        ON t.id_tiempo = e.id_tiempo
-    JOIN THE_BD_TEAM.BI_Profesor p  
-        ON p.id_rango_etario_profesor = e.id_rango_etario_profesor
-    JOIN THE_BD_TEAM.BI_BloqueDeSatisfaccion b 
-        ON b.id_bloque_satisfaccion = e.id_bloque_satisfaccion
+        ON s.id_sede = he.id_sede
+    JOIN THE_BD_TEAM.BI_Tiempo t
+        ON t.id_tiempo = he.id_tiempo
+    JOIN THE_BD_TEAM.BI_Profesor p
+        ON p.id_rango_etario_profesor = he.id_rango_etario_profesor
+    JOIN THE_BD_TEAM.BI_BloqueDeSatisfaccion b
+        ON b.id_bloque_satisfaccion = he.id_bloque_satisfaccion
 
     GROUP BY s.nombre, p.rango_etario, t.anio
 GO
@@ -902,10 +895,29 @@ BEGIN TRY
 END TRY
 BEGIN CATCH
 
-    ROLLBACK TRAN
-    DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
-    PRINT 'Error en migración: ' + @ErrorMessage;
+ ROLLBACK TRAN;
 
+    /*ROLLBACK TRAN
+    DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+    PRINT 'Error en migración: ' + @ErrorMessage;*/
+
+    DECLARE 
+        @Msg NVARCHAR(4000),
+        @ErrMsg NVARCHAR(4000),
+        @ErrLine INT,
+        @ErrProc NVARCHAR(200);
+
+    SET @ErrMsg = ERROR_MESSAGE();
+    SET @ErrLine = ERROR_LINE();
+    SET @ErrProc = ERROR_PROCEDURE();
+
+    SET @Msg = 
+        'ERROR EN MIGRACIÓN' + CHAR(10) +
+        'Procedimiento: ' + ISNULL(@ErrProc, 'N/A') + CHAR(10) +
+        'Línea: ' + CAST(@ErrLine AS VARCHAR(10)) + CHAR(10) +
+        'Mensaje: ' + @ErrMsg;
+
+    PRINT @Msg;
 END CATCH
 
 
@@ -928,19 +940,10 @@ SELECT * FROM THE_BD_TEAM.BI_V_IndiceSatisfaccion
 --DIMENSIONES
 
 SELECT * FROM THE_BD_TEAM.BI_Curso
-SELECT * FROM THE_BD_TEAM.Curso
-
 SELECT * FROM THE_BD_TEAM.BI_Tiempo
-
-SELECT * FROM THE_BD_TEAM.BI_Alumno --14980
-SELECT * FROM THE_BD_TEAM.Alumno
-
+SELECT * FROM THE_BD_TEAM.BI_Alumno
 SELECT * FROM THE_BD_TEAM.BI_Profesor
-SELECT * FROM THE_BD_TEAM.Profesor
-
 SELECT * FROM THE_BD_TEAM.BI_Sede
-SELECT * FROM THE_BD_TEAM.Sede
-
 SELECT * FROM THE_BD_TEAM.BI_MedioDePago
 SELECT * FROM THE_BD_TEAM.BI_BloqueDeSatisfaccion
 
