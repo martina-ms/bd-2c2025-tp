@@ -379,7 +379,8 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     id_hechos_final BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL,
     
     -- DIMENSIONES
-    id_tiempo BIGINT NOT NULL,               
+    id_tiempo_final BIGINT NOT NULL,         
+    id_tiempo_inicio BIGINT NOT NULL,               
     id_sede BIGINT NOT NULL,                
     id_rango_etario_alumno BIGINT NOT NULL,
     id_categoria BIGINT NOT NULL,            
@@ -390,12 +391,15 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     aprobo_final BIT NOT NULL,                                 
     ausente BIT NOT NULL,                                      
     cant_inscriptos INT NOT NULL DEFAULT 1,                    
-    fecha_inicio_curso DATE NOT NULL,
-    dias_hasta_aprobacion_final INT,
+
 
     -- CONSTRAINTS
     CONSTRAINT FK_BI_Finales_Tiempo
-    FOREIGN KEY (id_tiempo)
+    FOREIGN KEY (id_tiempo_final)
+    REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
+
+    CONSTRAINT FK_BI_Finales_Tiempo_Inicio
+    FOREIGN KEY (id_tiempo_inicio)
     REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
 
     CONSTRAINT FK_BI_Finales_Sede
@@ -553,33 +557,26 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarFinales
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Finales
-    (id_tiempo, id_sede, id_rango_etario_alumno, id_categoria, id_turno, 
-     nota_final, aprobo_final, ausente, cant_inscriptos,
-     fecha_inicio_curso, dias_hasta_aprobacion_final)
+    (id_tiempo_final, id_tiempo_inicio, id_sede, id_rango_etario_alumno, 
+     id_categoria, id_turno, nota_final, aprobo_final, ausente, cant_inscriptos)
     
     SELECT 
-        THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha),
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha),       
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(cur.fecha_inicio), 
         cur.id_sede,
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
-        cur.id_categoria,  -- Nueva: reemplaza FK_curso
-        cur.id_turno,      -- Nueva: reemplaza FK_curso
+        cur.id_categoria,
+        cur.id_turno,
         ef.nota,
-        CASE WHEN ef.nota IS NOT NULL AND ef.nota >= 4 THEN 1 ELSE 0 END AS aprobo_final,
-        CASE WHEN ef.nota IS NULL THEN 1 ELSE 0 END AS ausente,
-        1 AS cant_inscriptos,
-        cur.fecha_inicio,  -- Nueva: medida degenerada para cálculo de días
-        CASE 
-            WHEN ef.nota IS NOT NULL AND ef.nota >= 4 
-            THEN DATEDIFF(DAY, cur.fecha_inicio, mf.fecha)  -- Directo, sin función
-            ELSE NULL 
-        END AS dias_hasta_aprobacion_final
-
+        CASE WHEN ef.nota IS NOT NULL AND ef.nota >= 4 THEN 1 ELSE 0 END,
+        CASE WHEN ef.nota IS NULL THEN 1 ELSE 0 END,
+        1
     FROM THE_BD_TEAM.Mesa_De_Final mf
     JOIN THE_BD_TEAM.Curso cur 
         ON cur.cod_curso = mf.cod_curso
-    JOIN THE_BD_TEAM.Examen_Final ef
+    JOIN THE_BD_TEAM.Examen_Final ef 
         ON ef.id_mesa = mf.id_mesa
-    JOIN THE_BD_TEAM.Alumno a
+    JOIN THE_BD_TEAM.Alumno a 
         ON a.legajo = ef.legajo
     WHERE mf.fecha IS NOT NULL;
 END;
@@ -781,17 +778,36 @@ GO
 -- Vista 4: Tiempo promedio de finalización de curso.
 CREATE VIEW THE_BD_TEAM.BI_V_TiempoPromedioFinalizacion
 AS
+    WITH FechasFinales AS (
+        SELECT 
+            hf.id_hechos_final,
+            cat.nombre AS categoria,
+            ti.anio AS anio_inicio_curso,
+            -- Calcular días entre inicio y final
+            CASE 
+                WHEN hf.aprobo_final = 1 
+                THEN DATEDIFF(
+                    DAY, 
+                    DATEFROMPARTS(ti.anio, ti.mes, 1),
+                    DATEFROMPARTS(tf.anio, tf.mes, 1) 
+                )
+                ELSE NULL 
+            END AS dias_hasta_aprobacion
+        FROM THE_BD_TEAM.BI_Hechos_Finales hf
+        JOIN THE_BD_TEAM.BI_Categoria cat 
+            ON cat.id_categoria = hf.id_categoria
+        JOIN THE_BD_TEAM.BI_Tiempo ti 
+            ON ti.id_tiempo = hf.id_tiempo_inicio  
+        JOIN THE_BD_TEAM.BI_Tiempo tf 
+            ON tf.id_tiempo = hf.id_tiempo_final   
+    )
     SELECT 
-        cat.nombre AS categoria,
-        YEAR(hf.fecha_inicio_curso) AS anio_inicio_curso,  
-        CAST(AVG(hf.dias_hasta_aprobacion_final * 1.0) 
-             AS DECIMAL(10,2)) AS tiempo_promedio_dias
-    FROM THE_BD_TEAM.BI_Hechos_Finales hf
-    JOIN THE_BD_TEAM.BI_Categoria cat
-        ON cat.id_categoria = hf.id_categoria
-    WHERE hf.aprobo_final = 1 
-        AND hf.dias_hasta_aprobacion_final IS NOT NULL
-    GROUP BY cat.nombre, YEAR(hf.fecha_inicio_curso);
+        categoria,
+        anio_inicio_curso,
+        CAST(AVG(dias_hasta_aprobacion * 1.0) AS DECIMAL(10,2)) AS tiempo_promedio_dias
+    FROM FechasFinales
+    WHERE dias_hasta_aprobacion IS NOT NULL
+    GROUP BY categoria, anio_inicio_curso;
 GO
 
 -- Vista 5: Nota promedio de finales.
