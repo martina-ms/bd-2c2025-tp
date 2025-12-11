@@ -367,7 +367,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
 
     CONSTRAINT FK_BI_Cursada_Categoria
     FOREIGN KEY (id_categoria)
-    REFERENCES THE_BD_TEAM.BI_Categoria(id_categoria),
+    REFERENCES THE_BD_TEAM.BI_Categoria(id_categoria)
 );
 GO
 
@@ -408,7 +408,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
 
     CONSTRAINT FK_BI_Finales_Categoria
     FOREIGN KEY (id_categoria)
-    REFERENCES THE_BD_TEAM.BI_Categoria(id_categoria),
+    REFERENCES THE_BD_TEAM.BI_Categoria(id_categoria)
 );
 GO
 
@@ -762,39 +762,25 @@ AS
     GROUP BY s.nombre, t.anio;
 GO
 
--- Vista 4: Tiempo promedio de finalización de curso.
+-- Vista 4: Tiempo promedio de finalización de curso
 CREATE VIEW THE_BD_TEAM.BI_V_TiempoPromedioFinalizacion
 AS
-    WITH FechasFinales AS (
-        SELECT 
-            hf.id_hechos_final,
-            cat.nombre AS categoria,
-            ti.anio AS anio_inicio_curso,
-            -- Calcular días entre inicio y final
-            CASE 
-                WHEN hf.aprobo_final = 1 
-                THEN DATEDIFF(
-                    DAY, 
-                    DATEFROMPARTS(ti.anio, ti.mes, 1),
-                    DATEFROMPARTS(tf.anio, tf.mes, 1) 
-                )
-                ELSE NULL 
-            END AS dias_hasta_aprobacion
-        FROM THE_BD_TEAM.BI_Hechos_Finales hf
-        JOIN THE_BD_TEAM.BI_Categoria cat 
-            ON cat.id_categoria = hf.id_categoria
-        JOIN THE_BD_TEAM.BI_Tiempo ti 
-            ON ti.id_tiempo = hf.id_tiempo_inicio  
-        JOIN THE_BD_TEAM.BI_Tiempo tf 
-            ON tf.id_tiempo = hf.id_tiempo_final   
-    )
     SELECT 
-        categoria,
-        anio_inicio_curso,
-        CAST(AVG(dias_hasta_aprobacion * 1.0) AS DECIMAL(10,2)) AS tiempo_promedio_dias
-    FROM FechasFinales
-    WHERE dias_hasta_aprobacion IS NOT NULL
-    GROUP BY categoria, anio_inicio_curso;
+        cat.nombre AS categoria,
+        ti.anio AS anio_inicio_curso,
+        CAST(AVG(((tf.anio - ti.anio) * 12 + (tf.mes - ti.mes)) * 30) AS DECIMAL(10,2)
+        ) AS tiempo_promedio_dias
+    FROM THE_BD_TEAM.BI_Hechos_Finales hf
+    JOIN THE_BD_TEAM.BI_Categoria cat 
+        ON cat.id_categoria = hf.id_categoria
+    JOIN THE_BD_TEAM.BI_Tiempo ti 
+        ON ti.id_tiempo = hf.id_tiempo_inicio
+    JOIN THE_BD_TEAM.BI_Tiempo tf 
+        ON tf.id_tiempo = hf.id_tiempo_final
+    WHERE hf.aprobo_final = 1
+      AND tf.anio >= ti.anio
+      AND (tf.anio > ti.anio OR tf.mes >= ti.mes)
+    GROUP BY cat.nombre, ti.anio;
 GO
 
 -- Vista 5: Nota promedio de finales.
