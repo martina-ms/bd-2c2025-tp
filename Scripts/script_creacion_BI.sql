@@ -315,7 +315,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Inscripciones (
     id_turno BIGINT NOT NULL, 
     
     -- ATRIBUTO
-    estado VARCHAR(255),
+    es_rechazada BIT NOT NULL DEFAULT 0,
 
     -- CONSTRAINTS
     CONSTRAINT FK_BI_Inscripcion_Sede
@@ -493,7 +493,7 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarInscripcion
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Inscripciones
-        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, id_turno, estado)
+        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, id_turno, es_rechazada)
 
     SELECT  
         c.id_sede,
@@ -501,7 +501,10 @@ BEGIN
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         c.id_categoria, 
         c.id_turno,      
-        ei.estado
+        CASE ei.estado
+            WHEN 'Rechazada' THEN 1
+            ELSE 0
+        END AS es_rechazada
        
     FROM THE_BD_TEAM.Inscripcion i
     JOIN THE_BD_TEAM.Curso c 
@@ -608,7 +611,7 @@ AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Finanzas
     (id_sede, id_medio_pago, id_tiempo_emision, id_tiempo_pago, 
-     id_categoria, id_turno, importe_facturado, importe_adeudado, 
+     id_categoria, importe_facturado, importe_adeudado, 
      pago_fuera_termino, importe_pagado)
     
     SELECT 
@@ -618,8 +621,7 @@ BEGIN
         THE_BD_TEAM.BI_Obtener_Id_Tiempo((SELECT MIN(p.fecha)
                                           FROM THE_BD_TEAM.Pago p
                                           WHERE p.nro_factura = f.nro_factura)),
-        c.id_categoria, 
-        c.id_turno,  
+        c.id_categoria,  
         f.importe_total,
         CASE 
             WHEN EXISTS (SELECT 1
@@ -728,9 +730,12 @@ GO
 CREATE VIEW THE_BD_TEAM.BI_V_TasaRechazoInscripciones
 AS
     SELECT s.nombre AS sede, t.anio, t.mes,
-        CAST( SUM(CASE WHEN i.estado = 'Rechazada' THEN 1 ELSE 0 END) * 100.0
-            / COUNT(*) 
-        AS DECIMAL(10,2)) AS tasa_rechazo
+        COUNT(*) AS total_inscripciones,
+        SUM(CAST(i.es_rechazada AS INT)) AS cantidad_rechazadas,
+        CAST(
+            SUM(CAST(i.es_rechazada AS FLOAT)) * 100.0 / COUNT(*)
+            AS DECIMAL(10,2)
+        ) AS tasa_rechazo_porcentaje
     FROM THE_BD_TEAM.BI_Hechos_Inscripciones i
     JOIN THE_BD_TEAM.BI_Sede s
         ON s.id_sede = i.id_sede
