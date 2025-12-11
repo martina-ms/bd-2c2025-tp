@@ -348,8 +348,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
     id_sede BIGINT NOT NULL,
     id_tiempo BIGINT NOT NULL,
     id_rango_etario_alumno BIGINT NOT NULL,
-    id_categoria BIGINT NOT NULL,  
-    id_turno BIGINT NOT NULL,    
+    id_categoria BIGINT NOT NULL,     
     
     aprobo_cursada BIT NOT NULL DEFAULT 0, 
 
@@ -385,8 +384,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     id_tiempo_inicio BIGINT NOT NULL,               
     id_sede BIGINT NOT NULL,                
     id_rango_etario_alumno BIGINT NOT NULL,
-    id_categoria BIGINT NOT NULL,            
-    id_turno BIGINT NOT NULL,               
+    id_categoria BIGINT NOT NULL,
     
     -- MEDIDAS Y ATRIBUTOS
     nota_final DECIMAL(4,2),                                   
@@ -430,8 +428,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finanzas (
     id_sede BIGINT NOT NULL,
     id_tiempo_emision BIGINT NOT NULL,
     id_tiempo_pago BIGINT NULL, 
-    id_categoria BIGINT NULL,        
-    id_turno BIGINT NULL,            
+    id_categoria BIGINT NULL,            
     id_medio_pago BIGINT NULL,
     
     -- MEDIDAS
