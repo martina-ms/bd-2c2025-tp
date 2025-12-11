@@ -368,10 +368,6 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
     CONSTRAINT FK_BI_Cursada_Categoria
     FOREIGN KEY (id_categoria)
     REFERENCES THE_BD_TEAM.BI_Categoria(id_categoria),
-
-    CONSTRAINT FK_BI_Cursada_Turno
-    FOREIGN KEY (id_turno)
-    REFERENCES THE_BD_TEAM.BI_Turno(id_turno)
 );
 GO
 
@@ -413,10 +409,6 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     CONSTRAINT FK_BI_Finales_Categoria
     FOREIGN KEY (id_categoria)
     REFERENCES THE_BD_TEAM.BI_Categoria(id_categoria),
-
-    CONSTRAINT FK_BI_Finales_Turno
-    FOREIGN KEY (id_turno)
-    REFERENCES THE_BD_TEAM.BI_Turno(id_turno)
 );
 GO
 
@@ -453,10 +445,6 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finanzas (
     CONSTRAINT FK_BI_Finanzas_Categoria
     FOREIGN KEY (id_categoria)
     REFERENCES THE_BD_TEAM.BI_Categoria(id_categoria),
-
-    CONSTRAINT FK_BI_Finanzas_Turno
-    FOREIGN KEY (id_turno)
-    REFERENCES THE_BD_TEAM.BI_Turno(id_turno),
 
     CONSTRAINT FK_BI_Finanzas_Medio_Pago
     FOREIGN KEY (id_medio_pago)
@@ -567,13 +555,12 @@ BEGIN
     )
     -- Insertar en tabla de hechos BI
     INSERT INTO THE_BD_TEAM.BI_Hechos_Cursadas 
-        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, id_turno, aprobo_cursada)
+        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, aprobo_cursada)
     SELECT  
         c.id_sede,
         THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio),  
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         c.id_categoria,
-        c.id_turno,
         ca.aprobo_cursada  
     FROM CursadasAprobadas ca
     JOIN THE_BD_TEAM.Inscripcion i 
@@ -592,7 +579,7 @@ AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Finales
     (id_tiempo_final, id_tiempo_inicio, id_sede, id_rango_etario_alumno, 
-     id_categoria, id_turno, nota_final, aprobo_final, ausente, cant_inscriptos)
+     id_categoria, nota_final, aprobo_final, ausente, cant_inscriptos)
     
     SELECT 
         THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha),       
@@ -600,7 +587,6 @@ BEGIN
         cur.id_sede,
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         cur.id_categoria,
-        cur.id_turno,
         ef.nota,
         CASE WHEN ef.nota IS NOT NULL AND ef.nota >= 4 THEN 1 ELSE 0 END,
         CASE WHEN ef.nota IS NULL THEN 1 ELSE 0 END,
@@ -764,8 +750,10 @@ AS
             / COUNT(*) 
         AS DECIMAL(10,2)) AS tasa_aprobacion
     FROM THE_BD_TEAM.BI_Hechos_Cursadas hc
-    JOIN THE_BD_TEAM.BI_Sede s ON s.id_sede = hc.id_sede
-    JOIN THE_BD_TEAM.BI_Tiempo t ON t.id_tiempo = hc.id_tiempo
+    JOIN THE_BD_TEAM.BI_Sede s 
+        ON s.id_sede = hc.id_sede
+    JOIN THE_BD_TEAM.BI_Tiempo t 
+        ON t.id_tiempo = hc.id_tiempo
     GROUP BY s.nombre, t.anio;
 GO
 
