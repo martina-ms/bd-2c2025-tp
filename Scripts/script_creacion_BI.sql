@@ -349,7 +349,9 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
     id_tiempo BIGINT NOT NULL,
     id_rango_etario_alumno BIGINT NOT NULL,
     id_categoria BIGINT NOT NULL,  
-    id_turno BIGINT NOT NULL,      
+    id_turno BIGINT NOT NULL,    
+    
+    aprobo_cursada BIT NOT NULL DEFAULT 0, 
 
     -- CONSTRAINTS
     CONSTRAINT FK_BI_Cursada_Sede
@@ -530,25 +532,60 @@ GO
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarCursada
 AS
 BEGIN
-    INSERT INTO THE_BD_TEAM.BI_Hechos_Cursadas 
-        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, id_turno)
 
+    WITH CursadasAprobadas AS (
+        SELECT 
+            i.legajo,
+            i.cod_curso,
+            -- Lógica de aprobación: nota >=4 en TODOS los módulos + TP
+            CASE 
+                -- Verifica que tenga nota >=4 en TODOS los módulos del curso
+                WHEN (SELECT COUNT(*) 
+                      FROM THE_BD_TEAM.Modulo m
+                      WHERE m.cod_curso = i.cod_curso) =
+                     (SELECT COUNT(*)
+                      FROM THE_BD_TEAM.AlumnoXEvaluacion axe
+                      JOIN THE_BD_TEAM.Evaluacion ev ON ev.id_evaluacion = axe.id_evaluacion
+                      JOIN THE_BD_TEAM.Modulo m ON m.id_modulo = ev.id_modulo
+                      WHERE axe.legajo = i.legajo
+                        AND axe.presente = 1
+                        AND axe.nota >= 4
+                        AND m.cod_curso = i.cod_curso)
+                -- Verifica que tenga TP aprobado (nota >=4)
+                AND EXISTS (
+                    SELECT 1
+                    FROM THE_BD_TEAM.Trabajo_Practico tp
+                    WHERE tp.legajo = i.legajo
+                      AND tp.cod_curso = i.cod_curso
+                      AND tp.nota >= 4)
+                THEN 1 
+                ELSE 0 
+            END AS aprobo_cursada
+        FROM THE_BD_TEAM.Inscripcion i
+        WHERE i.id_EstadoInscripcion = (
+            SELECT id_EstadoInscripcion 
+            FROM THE_BD_TEAM.EstadoInscripcion 
+            WHERE estado = 'Confirmada'
+        )
+    )
+    -- Insertar en tabla de hechos BI
+    INSERT INTO THE_BD_TEAM.BI_Hechos_Cursadas 
+        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, id_turno, aprobo_cursada)
     SELECT  
         c.id_sede,
-        THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio),
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio),  
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
-        c.id_categoria, 
-        c.id_turno       
-
-    FROM THE_BD_TEAM.Inscripcion i
+        c.id_categoria,
+        c.id_turno,
+        ca.aprobo_cursada  
+    FROM CursadasAprobadas ca
+    JOIN THE_BD_TEAM.Inscripcion i 
+        ON i.legajo = ca.legajo AND i.cod_curso = ca.cod_curso
     JOIN THE_BD_TEAM.Curso c 
         ON c.cod_curso = i.cod_curso
-    JOIN THE_BD_TEAM.Alumno a
-        ON a.legajo = i.legajo
-    WHERE i.id_EstadoInscripcion = 
-          (SELECT id_EstadoInscripcion
-           FROM THE_BD_TEAM.EstadoInscripcion 
-           WHERE estado = 'Confirmada');
+    JOIN THE_BD_TEAM.Alumno a 
+        ON a.legajo = i.legajo;
+    
 END;
 GO
 
@@ -722,56 +759,16 @@ GO
 -- Vista 3: Comparación de desempeño de cursada por sede.
 CREATE VIEW THE_BD_TEAM.BI_V_TasaAprobacionCursada
 AS
-    WITH AlumnosAprobados AS (
-        -- Calcular qué alumnos aprobaron cursada (módulos + TP)
-        SELECT 
-            i.legajo,
-            i.cod_curso,
-            CASE 
-                -- Verifica que tenga nota >=4 en TODOS los módulos del curso
-                WHEN (SELECT COUNT(*) 
-                      FROM THE_BD_TEAM.Modulo m
-                      WHERE m.cod_curso = i.cod_curso) =
-                     (SELECT COUNT(*)
-                      FROM THE_BD_TEAM.AlumnoXEvaluacion axe
-                      JOIN THE_BD_TEAM.Evaluacion ev 
-                        ON ev.id_evaluacion = axe.id_evaluacion
-                      JOIN THE_BD_TEAM.Modulo m 
-                        ON m.id_modulo = ev.id_modulo
-                      WHERE axe.legajo = i.legajo
-                        AND axe.presente = 1
-                        AND axe.nota >= 4
-                        AND m.cod_curso = i.cod_curso)
-                -- Verifica que tenga TP aprobado (nota >=4)
-                AND EXISTS (
-                    SELECT 1
-                    FROM THE_BD_TEAM.Trabajo_Practico tp
-                    WHERE tp.legajo = i.legajo
-                      AND tp.cod_curso = i.cod_curso
-                      AND tp.nota >= 4)
-                THEN 1 
-                ELSE 0 
-            END AS aprobo_cursada
-        FROM THE_BD_TEAM.Inscripcion i
-        WHERE i.id_EstadoInscripcion = (
-            SELECT id_EstadoInscripcion 
-            FROM THE_BD_TEAM.EstadoInscripcion 
-            WHERE estado = 'Confirmada'
-        )
-    )
     SELECT 
         s.nombre AS sede,
         t.anio,
-        CAST(SUM(aa.aprobo_cursada) * 100.0 / COUNT(*) 
-             AS DECIMAL(10,2)) AS tasa_aprobacion
-    FROM AlumnosAprobados aa
-    JOIN THE_BD_TEAM.Curso c 
-        ON c.cod_curso = aa.cod_curso
-    JOIN THE_BD_TEAM.BI_Sede s 
-        ON s.id_sede = c.id_sede
-    JOIN THE_BD_TEAM.BI_Tiempo t 
-        ON t.anio = YEAR(c.fecha_inicio)
-           AND t.mes = MONTH(c.fecha_inicio)
+        CAST(
+            SUM(CASE WHEN hc.aprobo_cursada = 1 THEN 1 ELSE 0 END) * 100.0 
+            / COUNT(*) 
+        AS DECIMAL(10,2)) AS tasa_aprobacion
+    FROM THE_BD_TEAM.BI_Hechos_Cursadas hc
+    JOIN THE_BD_TEAM.BI_Sede s ON s.id_sede = hc.id_sede
+    JOIN THE_BD_TEAM.BI_Tiempo t ON t.id_tiempo = hc.id_tiempo
     GROUP BY s.nombre, t.anio;
 GO
 
@@ -821,7 +818,7 @@ AS
         CAST(AVG(hf.nota_final) AS DECIMAL(10,2)) AS nota_promedio_final
     FROM THE_BD_TEAM.BI_Hechos_Finales hf
     JOIN THE_BD_TEAM.BI_Tiempo t
-        ON t.id_tiempo = hf.id_tiempo  
+        ON t.id_tiempo = hf.id_tiempo_final
     JOIN THE_BD_TEAM.BI_Alumno a
         ON a.id_rango_etario_alumno = hf.id_rango_etario_alumno
     JOIN THE_BD_TEAM.BI_Categoria cat
@@ -844,7 +841,7 @@ AS
         AS DECIMAL(10,2)) AS tasa_ausentismo
     FROM THE_BD_TEAM.BI_Hechos_Finales hf
     JOIN THE_BD_TEAM.BI_Tiempo t 
-        ON t.id_tiempo = hf.id_tiempo  
+        ON t.id_tiempo = hf.id_tiempo_final  
     JOIN THE_BD_TEAM.BI_Sede s 
         ON s.id_sede = hf.id_sede      
     GROUP BY t.anio, t.cuatrimestre, s.nombre;
