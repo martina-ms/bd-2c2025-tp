@@ -315,7 +315,8 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Inscripciones (
     id_turno BIGINT NOT NULL, 
     
     -- ATRIBUTO
-    es_rechazada BIT NOT NULL DEFAULT 0,
+    cantidad_inscriptos INT,
+    cantidad_rechazados INT,
 
     -- CONSTRAINTS
     CONSTRAINT FK_BI_Inscripcion_Sede
@@ -350,7 +351,9 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Cursadas (
     id_rango_etario_alumno BIGINT NOT NULL,
     id_categoria BIGINT NOT NULL,     
     
-    aprobo_cursada BIT NOT NULL DEFAULT 0, 
+    cantidad_inscriptos INT NOT NULL DEFAULT 0,
+    cantidad_aprobados INT NOT NULL DEFAULT 0,
+    tiempo_promedio_finalizacion_dias DECIMAL(10,2) NULL,
 
     -- CONSTRAINTS
     CONSTRAINT FK_BI_Cursada_Sede
@@ -383,7 +386,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     id_categoria BIGINT NOT NULL,
     
     -- MEDIDAS Y ATRIBUTOS
-    nota_final DECIMAL(4,2),                                   
+    nota_final DECIMAL(4,2),                  
     aprobo_final BIT NOT NULL,                                 
     ausente BIT NOT NULL,                                      
     cant_inscriptos INT NOT NULL DEFAULT 1,                    
@@ -493,7 +496,7 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarInscripcion
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Inscripciones
-        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, id_turno, es_rechazada)
+        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, id_turno, cantidad_inscriptos, cantidad_rechazados)
 
     SELECT  
         c.id_sede,
@@ -501,10 +504,8 @@ BEGIN
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         c.id_categoria, 
         c.id_turno,      
-        CASE ei.estado
-            WHEN 'Rechazada' THEN 1
-            ELSE 0
-        END AS es_rechazada
+        COUNT(DISTINCT i.nro_inscripcion) as cantidad_inscriptos,
+        SUM(CASE WHEN ei.estado = 'Rechazada' THEN 1 ELSE 0 END) as cantidad_rechazados
        
     FROM THE_BD_TEAM.Inscripcion i
     JOIN THE_BD_TEAM.Curso c 
@@ -512,7 +513,14 @@ BEGIN
     JOIN THE_BD_TEAM.EstadoInscripcion ei 
         ON ei.id_EstadoInscripcion = i.id_EstadoInscripcion
     JOIN THE_BD_TEAM.Alumno a 
-        ON a.legajo = i.legajo;
+        ON a.legajo = i.legajo
+        WHERE i.fecha_inscripcion IS NOT NULL
+    GROUP BY 
+        c.id_sede,
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(i.fecha_inscripcion),
+        THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
+        c.id_categoria, 
+        c.id_turno;
 END;
 GO
 
@@ -549,32 +557,70 @@ BEGIN
                 THEN 1 
                 ELSE 0 
             END AS aprobo_cursada
+
+
         FROM THE_BD_TEAM.Inscripcion i
         WHERE i.id_EstadoInscripcion = (
             SELECT id_EstadoInscripcion 
             FROM THE_BD_TEAM.EstadoInscripcion 
             WHERE estado = 'Confirmada'
         )
+    ),
+    TiemposFinalizacion AS (
+        -- Calcular tiempo de finalización para cada alumno que aprobó el FINAL
+        SELECT 
+            i.legajo,
+            i.cod_curso,
+            -- Tiempo en días entre inicio del curso y aprobación del final
+            DATEDIFF(DAY, c.fecha_inicio, mf.fecha) as dias_finalizacion
+        FROM THE_BD_TEAM.Inscripcion i
+        JOIN THE_BD_TEAM.Curso c ON c.cod_curso = i.cod_curso
+        JOIN THE_BD_TEAM.Mesa_De_Final mf ON mf.cod_curso = c.cod_curso
+        JOIN THE_BD_TEAM.Examen_Final ef ON ef.id_mesa = mf.id_mesa 
+            AND ef.legajo = i.legajo
+        WHERE i.id_EstadoInscripcion = (
+            SELECT id_EstadoInscripcion 
+            FROM THE_BD_TEAM.EstadoInscripcion 
+            WHERE estado = 'Confirmada'
+        )
+        AND ef.nota >= 4  -- Solo finales aprobados
+        AND c.fecha_inicio IS NOT NULL
+        AND mf.fecha IS NOT NULL
+        AND mf.fecha >= c.fecha_inicio  -- Validación lógica
     )
     -- Insertar en tabla de hechos BI
     INSERT INTO THE_BD_TEAM.BI_Hechos_Cursadas 
-        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, aprobo_cursada)
+        (id_sede, id_tiempo, id_rango_etario_alumno, id_categoria, cantidad_inscriptos, cantidad_aprobados, tiempo_promedio_finalizacion_dias)
     SELECT  
         c.id_sede,
         THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio),  
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         c.id_categoria,
-        ca.aprobo_cursada  
+        COUNT(*) as cantidad_inscriptos,
+        SUM(ca.aprobo_cursada) as cantidad_aprobados,
+        AVG(CASE 
+            WHEN tf.dias_finalizacion IS NOT NULL 
+            THEN CAST(tf.dias_finalizacion AS DECIMAL(10,2))
+            ELSE NULL 
+        END) as tiempo_promedio_finalizacion_dias
     FROM CursadasAprobadas ca
     JOIN THE_BD_TEAM.Inscripcion i 
         ON i.legajo = ca.legajo AND i.cod_curso = ca.cod_curso
     JOIN THE_BD_TEAM.Curso c 
         ON c.cod_curso = i.cod_curso
     JOIN THE_BD_TEAM.Alumno a 
-        ON a.legajo = i.legajo;
-    
+        ON a.legajo = i.legajo
+    LEFT JOIN TiemposFinalizacion tf 
+        ON tf.legajo = i.legajo AND tf.cod_curso = i.cod_curso
+    WHERE c.fecha_inicio IS NOT NULL
+    GROUP BY 
+        c.id_sede,
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(c.fecha_inicio),
+        THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
+        c.id_categoria;
 END;
 GO
+
 
 -- Finales
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarFinales
@@ -707,10 +753,10 @@ AS
             t.anio,
             cat.nombre AS categoria,  
             tur.nombre AS turno,         
-            COUNT(*) AS cantidad_inscriptos,
+            SUM(i.cantidad_inscriptos) AS cantidad_inscriptos,
             ROW_NUMBER() OVER (
                 PARTITION BY s.nombre, t.anio
-                ORDER BY COUNT(*) DESC
+                ORDER BY SUM(i.cantidad_inscriptos) DESC
             ) AS rn
         FROM THE_BD_TEAM.BI_Hechos_Inscripciones i
         JOIN THE_BD_TEAM.BI_Sede s
@@ -730,10 +776,14 @@ GO
 CREATE VIEW THE_BD_TEAM.BI_V_TasaRechazoInscripciones
 AS
     SELECT s.nombre AS sede, t.anio, t.mes,
-        COUNT(*) AS total_inscripciones,
-        SUM(CAST(i.es_rechazada AS INT)) AS cantidad_rechazadas,
+        SUM(i.cantidad_inscriptos) AS total_inscripciones,  
+        SUM(i.cantidad_rechazados) AS cantidad_rechazadas,
         CAST(
-            SUM(CAST(i.es_rechazada AS FLOAT)) * 100.0 / COUNT(*)
+            CASE 
+                WHEN SUM(i.cantidad_inscriptos) > 0 
+                THEN (SUM(i.cantidad_rechazados) * 100.0) / SUM(i.cantidad_inscriptos)
+                ELSE 0 
+            END
             AS DECIMAL(10,2)
         ) AS tasa_rechazo_porcentaje
     FROM THE_BD_TEAM.BI_Hechos_Inscripciones i
@@ -750,9 +800,14 @@ AS
     SELECT 
         s.nombre AS sede,
         t.anio,
+        SUM(hc.cantidad_inscriptos) AS total_inscriptos,
+        SUM(hc.cantidad_aprobados) AS total_aprobados,
         CAST(
-            SUM(CASE WHEN hc.aprobo_cursada = 1 THEN 1 ELSE 0 END) * 100.0 
-            / COUNT(*) 
+            CASE
+                WHEN SUM(hc.cantidad_inscriptos) > 0
+                THEN (SUM(hc.cantidad_aprobados) * 100.0) / SUM(hc.cantidad_inscriptos)
+                ELSE 0
+            END
         AS DECIMAL(10,2)) AS tasa_aprobacion
     FROM THE_BD_TEAM.BI_Hechos_Cursadas hc
     JOIN THE_BD_TEAM.BI_Sede s 
@@ -767,20 +822,15 @@ CREATE VIEW THE_BD_TEAM.BI_V_TiempoPromedioFinalizacion
 AS
     SELECT 
         cat.nombre AS categoria,
-        ti.anio AS anio_inicio_curso,
-        CAST(AVG(((tf.anio - ti.anio) * 12 + (tf.mes - ti.mes)) * 30) AS DECIMAL(10,2)
-        ) AS tiempo_promedio_dias
-    FROM THE_BD_TEAM.BI_Hechos_Finales hf
+        t.anio AS anio_inicio_curso,
+        AVG(hc.tiempo_promedio_finalizacion_dias) AS tiempo_promedio_dias
+    FROM THE_BD_TEAM.BI_Hechos_Cursadas hc
     JOIN THE_BD_TEAM.BI_Categoria cat 
-        ON cat.id_categoria = hf.id_categoria
-    JOIN THE_BD_TEAM.BI_Tiempo ti 
-        ON ti.id_tiempo = hf.id_tiempo_inicio
-    JOIN THE_BD_TEAM.BI_Tiempo tf 
-        ON tf.id_tiempo = hf.id_tiempo_final
-    WHERE hf.aprobo_final = 1
-      AND tf.anio >= ti.anio
-      AND (tf.anio > ti.anio OR tf.mes >= ti.mes)
-    GROUP BY cat.nombre, ti.anio;
+        ON cat.id_categoria = hc.id_categoria
+    JOIN THE_BD_TEAM.BI_Tiempo t 
+        ON t.id_tiempo = hc.id_tiempo
+    WHERE hc.tiempo_promedio_finalizacion_dias IS NOT NULL
+    GROUP BY cat.nombre, t.anio;
 GO
 
 -- Vista 5: Nota promedio de finales.
