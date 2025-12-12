@@ -386,10 +386,9 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     id_categoria BIGINT NOT NULL,
     
     -- MEDIDAS Y ATRIBUTOS
-    nota_final DECIMAL(4,2),                  
-    aprobo_final BIT NOT NULL,                                 
-    ausente BIT NOT NULL,                                      
-    cant_inscriptos INT NOT NULL DEFAULT 1,                    
+    cantidad_inscriptos_final INT,
+    cantidad_ausentes_final INT,
+    nota_promedio_final DECIMAL(5,2),         
 
 
     -- CONSTRAINTS
@@ -621,14 +620,12 @@ BEGIN
 END;
 GO
 
-
--- Finales
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarFinales
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Finales
     (id_tiempo_final, id_tiempo_inicio, id_sede, id_rango_etario_alumno, 
-     id_categoria, nota_final, aprobo_final, ausente, cant_inscriptos)
+     id_categoria, cantidad_inscriptos_final, cantidad_ausentes_final, nota_promedio_final)
     
     SELECT 
         THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha),       
@@ -636,10 +633,10 @@ BEGIN
         cur.id_sede,
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         cur.id_categoria,
-        ef.nota,
-        CASE WHEN ef.nota IS NOT NULL AND ef.nota >= 4 THEN 1 ELSE 0 END,
-        CASE WHEN ef.nota IS NULL THEN 1 ELSE 0 END,
-        1
+        COUNT(*) as cantidad_inscriptos_final, 
+        SUM(CASE WHEN ef.nota IS NULL THEN 1 ELSE 0 END) as cantidad_ausentes_final,
+        AVG(ef.nota) as nota_promedio_final 
+        
     FROM THE_BD_TEAM.Mesa_De_Final mf
     JOIN THE_BD_TEAM.Curso cur 
         ON cur.cod_curso = mf.cod_curso
@@ -647,7 +644,13 @@ BEGIN
         ON ef.id_mesa = mf.id_mesa
     JOIN THE_BD_TEAM.Alumno a 
         ON a.legajo = ef.legajo
-    WHERE mf.fecha IS NOT NULL;
+    WHERE mf.fecha IS NOT NULL
+    GROUP BY 
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha),
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(cur.fecha_inicio),
+        cur.id_sede,
+        THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
+        cur.id_categoria;
 END;
 GO
 
@@ -841,7 +844,7 @@ AS
         t.cuatrimestre AS semestre, 
         a.rango_etario AS rango_etario_alumno,
         cat.nombre AS categoria, 
-        CAST(AVG(hf.nota_final) AS DECIMAL(10,2)) AS nota_promedio_final
+        CAST(AVG(hf.nota_promedio_final) AS DECIMAL(10,2)) AS nota_promedio_final
     FROM THE_BD_TEAM.BI_Hechos_Finales hf
     JOIN THE_BD_TEAM.BI_Tiempo t
         ON t.id_tiempo = hf.id_tiempo_final
@@ -849,8 +852,7 @@ AS
         ON a.id_rango_etario_alumno = hf.id_rango_etario_alumno
     JOIN THE_BD_TEAM.BI_Categoria cat
         ON cat.id_categoria = hf.id_categoria  
-    WHERE hf.ausente = 0
-      AND hf.nota_final IS NOT NULL
+    WHERE hf.nota_promedio_final IS NOT NULL
     GROUP BY t.anio, t.cuatrimestre, a.rango_etario, cat.nombre;
 GO
 
@@ -859,12 +861,15 @@ CREATE VIEW THE_BD_TEAM.BI_V_TasaAusentismoFinales
 AS
     SELECT 
         t.anio, 
-        t.cuatrimestre, 
+        t.cuatrimestre AS semestre, 
         s.nombre AS sede,
         CAST(
-            SUM(CASE WHEN hf.ausente = 1 THEN hf.cant_inscriptos ELSE 0 END) * 100.0 
-            / SUM(hf.cant_inscriptos) 
-        AS DECIMAL(10,2)) AS tasa_ausentismo
+            CASE 
+                WHEN SUM(hf.cantidad_inscriptos_final) > 0 
+                THEN (SUM(hf.cantidad_ausentes_final) * 100.0) / SUM(hf.cantidad_inscriptos_final)
+                ELSE 0 
+            END
+        AS DECIMAL(10,2)) AS tasa_ausentismo_porcentaje
     FROM THE_BD_TEAM.BI_Hechos_Finales hf
     JOIN THE_BD_TEAM.BI_Tiempo t 
         ON t.id_tiempo = hf.id_tiempo_final  
