@@ -597,11 +597,17 @@ BEGIN
         c.id_categoria,
         COUNT(*) as cantidad_inscriptos,
         SUM(ca.aprobo_cursada) as cantidad_aprobados,
-        AVG(CASE 
-            WHEN tf.dias_finalizacion IS NOT NULL 
-            THEN CAST(tf.dias_finalizacion AS DECIMAL(10,2))
-            ELSE NULL 
-        END) as tiempo_promedio_finalizacion_dias
+        CASE 
+          WHEN SUM(CASE WHEN tf.dias_finalizacion IS NOT NULL THEN 1 ELSE 0 END) > 0
+          THEN CAST(
+                SUM(CASE WHEN tf.dias_finalizacion IS NOT NULL 
+                         THEN CAST(tf.dias_finalizacion AS DECIMAL(18,6)) 
+                         ELSE 0 END)
+                / SUM(CASE WHEN tf.dias_finalizacion IS NOT NULL THEN 1 ELSE 0 END)
+               AS DECIMAL(10,2))
+          ELSE NULL
+        END AS tiempo_promedio_finalizacion_dias
+
     FROM CursadasAprobadas ca
     JOIN THE_BD_TEAM.Inscripcion i 
         ON i.legajo = ca.legajo AND i.cod_curso = ca.cod_curso
@@ -620,6 +626,7 @@ BEGIN
 END;
 GO
 
+--Finales
 CREATE PROCEDURE THE_BD_TEAM.BI_MigrarFinales
 AS
 BEGIN
@@ -635,7 +642,14 @@ BEGIN
         cur.id_categoria,
         COUNT(*) as cantidad_inscriptos_final, 
         SUM(CASE WHEN ef.nota IS NULL THEN 1 ELSE 0 END) as cantidad_ausentes_final,
-        AVG(ef.nota) as nota_promedio_final 
+        CASE 
+          WHEN SUM(CASE WHEN ef.nota IS NOT NULL THEN 1 ELSE 0 END) > 0
+          THEN CAST(
+                SUM(CASE WHEN ef.nota IS NOT NULL THEN CAST(ef.nota AS DECIMAL(18,6)) ELSE 0 END)
+                / SUM(CASE WHEN ef.nota IS NOT NULL THEN 1 ELSE 0 END)
+               AS DECIMAL(10,2))
+          ELSE NULL
+        END AS nota_promedio_final  
         
     FROM THE_BD_TEAM.Mesa_De_Final mf
     JOIN THE_BD_TEAM.Curso cur 
