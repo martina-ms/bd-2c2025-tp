@@ -379,8 +379,7 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     id_hechos_final BIGINT IDENTITY(1,1) PRIMARY KEY NOT NULL,
     
     -- DIMENSIONES
-    id_tiempo_final BIGINT NOT NULL,         
-    id_tiempo_inicio BIGINT NOT NULL,               
+    id_tiempo_final BIGINT NOT NULL,            
     id_sede BIGINT NOT NULL,                
     id_rango_etario_alumno BIGINT NOT NULL,
     id_categoria BIGINT NOT NULL,
@@ -394,10 +393,6 @@ CREATE TABLE THE_BD_TEAM.BI_Hechos_Finales (
     -- CONSTRAINTS
     CONSTRAINT FK_BI_Finales_Tiempo
     FOREIGN KEY (id_tiempo_final)
-    REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
-
-    CONSTRAINT FK_BI_Finales_Tiempo_Inicio
-    FOREIGN KEY (id_tiempo_inicio)
     REFERENCES THE_BD_TEAM.BI_Tiempo(id_tiempo),
 
     CONSTRAINT FK_BI_Finales_Sede
@@ -631,12 +626,11 @@ CREATE PROCEDURE THE_BD_TEAM.BI_MigrarFinales
 AS
 BEGIN
     INSERT INTO THE_BD_TEAM.BI_Hechos_Finales
-    (id_tiempo_final, id_tiempo_inicio, id_sede, id_rango_etario_alumno, 
+    (id_tiempo_final, id_sede, id_rango_etario_alumno, 
      id_categoria, cantidad_inscriptos_final, cantidad_ausentes_final, nota_promedio_final)
     
     SELECT 
-        THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha),       
-        THE_BD_TEAM.BI_Obtener_Id_Tiempo(cur.fecha_inicio), 
+        THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha), 
         cur.id_sede,
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         cur.id_categoria,
@@ -661,7 +655,6 @@ BEGIN
     WHERE mf.fecha IS NOT NULL
     GROUP BY 
         THE_BD_TEAM.BI_Obtener_Id_Tiempo(mf.fecha),
-        THE_BD_TEAM.BI_Obtener_Id_Tiempo(cur.fecha_inicio),
         cur.id_sede,
         THE_BD_TEAM.BI_Clasificar_Rango_Alumno(a.fechaNacimiento),
         cur.id_categoria;
@@ -1050,8 +1043,9 @@ SELECT * FROM THE_BD_TEAM.BI_V_IndiceSatisfaccion
 
 --DIMENSIONES
 
-SELECT * FROM THE_BD_TEAM.BI_Curso
 SELECT * FROM THE_BD_TEAM.BI_Tiempo
+SELECT * FROM THE_BD_TEAM.BI_Turno
+SELECT * FROM THE_BD_TEAM.BI_Categoria
 SELECT * FROM THE_BD_TEAM.BI_Alumno
 SELECT * FROM THE_BD_TEAM.BI_Profesor
 SELECT * FROM THE_BD_TEAM.BI_Sede
