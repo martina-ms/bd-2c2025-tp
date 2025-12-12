@@ -535,10 +535,10 @@ BEGIN
             -- Lógica de aprobación: nota >=4 en TODOS los módulos + TP
             CASE 
                 -- Verifica que tenga nota >=4 en TODOS los módulos del curso
-                WHEN (SELECT COUNT(*) 
+                WHEN (SELECT COUNT(DISTINCT m.id_modulo) 
                       FROM THE_BD_TEAM.Modulo m
                       WHERE m.cod_curso = i.cod_curso) =
-                     (SELECT COUNT(*)
+                     (SELECT COUNT(DISTINCT m.id_modulo)
                       FROM THE_BD_TEAM.AlumnoXEvaluacion axe
                       JOIN THE_BD_TEAM.Evaluacion ev ON ev.id_evaluacion = axe.id_evaluacion
                       JOIN THE_BD_TEAM.Modulo m ON m.id_modulo = ev.id_modulo
